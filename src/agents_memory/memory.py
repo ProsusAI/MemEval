@@ -7,7 +7,7 @@ is a retrieval system, not an answer system.
 
 Architecture borrowed from OpenClaw and OpenClaw+:
 - Hybrid search (vector + BM25 via SQLite FTS5) from OpenClaw
-- Proposition extraction via LLM from OpenClaw+ (Cortex)
+- Proposition extraction via LLM from OpenClaw+
 - 0.8/0.2 vector/BM25 weight split for short propositions from OpenClaw+
 - BM25 AND→OR fallback from OpenClaw+
 - Partial JSON recovery for truncated LLM output from OpenClaw+

@@ -6,7 +6,7 @@ configurable LLM model and optional judge evaluation.
 
 Usage:
     # Single system, 1 conversation
-    uv run python scripts/run_full_benchmark.py --systems cortex --num-samples 1 --skip-judge
+    uv run python scripts/run_full_benchmark.py --systems openclaw_plus --num-samples 1 --skip-judge
 
     # All systems, all conversations, gpt-4.1-mini
     uv run python scripts/run_full_benchmark.py \
@@ -14,7 +14,7 @@ Usage:
 
     # Specific systems
     uv run python scripts/run_full_benchmark.py \
-        --systems cortex,graphiti --num-samples 10 --skip-judge
+        --systems openclaw_plus,graphiti --num-samples 10 --skip-judge
 """
 
 from __future__ import annotations
@@ -149,12 +149,12 @@ async def _qa_results_async(
 # ---------------------------------------------------------------------------
 
 
-def run_cortex(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
-    """Cortex: proposition-based entity-centric retrieval."""
-    from agents_memory.cortex import CortexSystem
+def run_openclaw_plus(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+    """OpenClawPlus: proposition-based entity-centric retrieval."""
+    from agents_memory.openclaw_plus import OpenClawPlusSystem
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    system = CortexSystem()
+    system = OpenClawPlusSystem()
     ingest = system.ingest_conversation(conv, client, llm_model)
     print(
         f"    Ingested: chunks={ingest['num_chunks']}, "
@@ -534,8 +534,8 @@ async def _run_graphiti_async(
 # ---------------------------------------------------------------------------
 
 SYSTEMS: dict[str, dict] = {
-    "cortex": {
-        "fn": run_cortex,
+    "openclaw_plus": {
+        "fn": run_openclaw_plus,
         "architecture": "proposition-based entity-centric retrieval",
         "infrastructure": "vector store + BM25",
     },

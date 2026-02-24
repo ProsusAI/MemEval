@@ -1,4 +1,4 @@
-"""Cortex: proposition-based memory with entity-centric retrieval.
+"""OpenClawPlus: proposition-based memory with entity-centric retrieval.
 
 Architecture inspired by MAGMA, Hindsight, and A-MEM (SOTA Jan 2026):
   1. Ingestion — extract atomic propositions per entity per session (LLM)
@@ -147,13 +147,13 @@ class Proposition:
 
 
 # ---------------------------------------------------------------------------
-# CortexSystem
+# OpenClawPlusSystem
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class CortexSystem:
-    """Cortex: proposition-based memory with entity-centric retrieval.
+class OpenClawPlusSystem:
+    """OpenClawPlus: proposition-based memory with entity-centric retrieval.
 
     Ingestion:
       1. Chunk + embed raw markdown (OpenClaw) — fallback retrieval
