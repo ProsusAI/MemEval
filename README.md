@@ -211,11 +211,6 @@ Token F1 is the primary metric for comparison. LLM judge is supplementary — us
 - **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy — a fundamentally different metric from token F1. Not directly comparable.
 - **SimpleMem** results are close to the paper's: our 4-category average is 45.8 vs paper's 43.2 (temporal matches exactly at 58.3 vs 58.6).
 
-## Future Considerations
-- **Tool-calling integration** — expose `recall()` and `forget()` as agent tools for mid-conversation memory management
-- **Database backend** — replace JSON file persistence with a vector database (pgvector, Qdrant, LanceDB) for scale; the `Memory` API stays the same
-- **Async support** — add async wrappers for high-throughput platforms
-
 ## References
 
 | Paper | Link |
