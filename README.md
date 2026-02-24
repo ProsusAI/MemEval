@@ -156,7 +156,7 @@ Then run:
 
 ```bash
 # Your system vs OpenClaw+ on 1 conversation
-uv run python scripts/run_full_benchmark.py --systems mysystem,cortex --num-samples 1 --skip-judge
+uv run python scripts/run_full_benchmark.py --systems mysystem,openclaw_plus --num-samples 1 --skip-judge
 
 # Full benchmark (10 conversations, 1986 QA pairs)
 uv run python scripts/run_full_benchmark.py --systems mysystem --num-samples 10 --skip-judge

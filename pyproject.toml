@@ -3,8 +3,8 @@ name = "agents-memory"
 version = "0.1.0"
 description = "Plug-and-play memory for agents — proposition extraction, entity-filtered retrieval, hybrid search"
 readme = "README.md"
-license = {text = "MIT"}
-authors = [{name = "Prosus"}]
+license = {text = "Apache-2.0"}
+authors = [{name = "Prosus Services B.V."}]
 requires-python = ">=3.13"
 dependencies = [
     "openai>=1.0.0",
