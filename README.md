@@ -114,11 +114,12 @@ Real outputs from the LoCoMo benchmark (gpt-4.1-mini, conv-26):
 
 ## 🔬 How It Works
 
-**MemClaw** is a memory system that extracts atomic facts from conversations, organises them by person, and retrieves only what's relevant to answer each question — no cross-person confusion, no wasted context.
+**MemClaw** is a memory system that extracts atomic facts from conversations, organises them by person, and retrieves only what's relevant to answer each question, no cross-person confusion, no wasted context.
 
 | 🧩 Proposition Extraction | 🎯 Entity-Filtered Retrieval | 💬 Chain-of-Thought Answering |
 |---|---|---|
-| LLM distills each session into date-stamped atomic facts per person (~25 words vs ~100-word chunks) | Search scoped to only the relevant person — eliminates cross-person hallucination | Structured reasoning over evidence before answering, with inferential and multilingual support |
+| LLM extracts every fact per session as a self-contained `{entity, fact, date}` triple — ~25 words, entity name always explicit | Question matched to a speaker, then search runs **only over that person's propositions** — Bob's facts are invisible when answering about Alice | Structured `{reasoning, answer}` JSON output. Inferential questions ("Would Alice...?") route to a dedicated reasoning prompt. Dates resolved to absolute. |
+
 
 See [MEMCLAW.md](MEMCLAW.md) for the full design. The benchmark compares 7 systems:
 
@@ -239,6 +240,12 @@ for conv in data[:1]:
 - **Mem0** has a known timestamp bug ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) where the platform uses current system date instead of conversation timestamps, degrading temporal reasoning. Our Mem0 temporal F1 (0.121) is far below the paper's (0.489). This likely depresses our Mem0 overall F1.
 - **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy — a fundamentally different metric from token F1. Not directly comparable.
 - **SimpleMem** results are close to the paper's: our 4-category average is 45.8 vs paper's 43.2 (temporal matches exactly at 58.3 vs 58.6).
+
+---
+
+## 📄 License
+
+This project is licensed under the **Apache License 2.0** — see the [LICENSE](LICENSE) file for details.
 
 ---
 
