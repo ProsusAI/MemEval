@@ -6,9 +6,6 @@ models/
 # Virtual environment
 .venv/
 
-# Databricks
-.databricks/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -22,21 +19,6 @@ build/
 # Generated database files
 lancedb_data/
 *.db
-
-# Temp resource files
-data/resources/tmp*.json
-
-# R1 training data (large files)
-data/r1_training/
-
-# Embedding caches (large)
-data/r1_labels/embeddings_cache.json
-data/mm_rl/embeddings_cache.json
-data/mm_rl/eval_embeddings_cache.json
-data/mm_rl/reward_embeddings_cache.json
-
-# Derived files (can be regenerated)
-data/r1_labels/memory_manager_train_augmented.jsonl
 
 # OS
 .DS_Store

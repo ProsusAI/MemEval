@@ -1,17 +1,8 @@
-"""OpenClawPlus: proposition-based memory with entity-centric retrieval.
+"""MemClaw: proposition-based memory with entity-centric retrieval.
 
-Architecture inspired by MAGMA, Hindsight, and A-MEM (SOTA Jan 2026):
-  1. Ingestion — extract atomic propositions per entity per session (LLM)
-     + raw markdown chunks (OpenClaw) as fallback
-  2. Retrieval — entity-filtered proposition search (vector+BM25)
-     + raw chunk search for broader context
-  3. Answer — CoT reasoning over entity-specific evidence
-
-Key advantages over raw-chunk retrieval:
-  - Entity-centric: no cross-person confusion (fixes adversarial)
-  - Proposition-level: atomic facts, precise retrieval (fixes multi-hop)
-  - Entity fact profiles: enables inference from known facts (fixes inferential)
-  - Scalable: propositions are ~25 words vs ~100-word chunks
+Extends OpenClaw's chunk-and-search with proposition extraction,
+entity-filtered retrieval, and CoT answer generation.
+See MEMCLAW.md for design details.
 """
 
 from __future__ import annotations
@@ -147,13 +138,13 @@ class Proposition:
 
 
 # ---------------------------------------------------------------------------
-# OpenClawPlusSystem
+# MemClawSystem
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class OpenClawPlusSystem:
-    """OpenClawPlus: proposition-based memory with entity-centric retrieval.
+class MemClawSystem:
+    """MemClaw: proposition-based memory with entity-centric retrieval.
 
     Ingestion:
       1. Chunk + embed raw markdown (OpenClaw) — fallback retrieval
