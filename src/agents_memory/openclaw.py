@@ -9,6 +9,7 @@ Ported from the OpenClaw TypeScript source:
 Reference: https://github.com/openclaw/openclaw
 Docs: https://docs.openclaw.ai/concepts/memory
 """
+# OpenClaw is MIT licensed — https://github.com/openclaw/openclaw
 
 from __future__ import annotations
 

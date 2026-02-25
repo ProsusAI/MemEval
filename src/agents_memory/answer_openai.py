@@ -1,6 +1,4 @@
 """OpenAI-based short-answer agent + EM utilities.
-
-Used for both evaluation and RL reward computation.
 """
 
 from __future__ import annotations
