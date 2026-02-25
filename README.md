@@ -45,9 +45,9 @@ All results with **gpt-4.1-mini**, **text-embedding-3-small**, token-level F1 sc
 | MemU | 0.310 ± 0.028 | 0.192 | 0.064 | 0.235 | 0.760 | 6.9M |
 | OpenClaw | 0.277 ± 0.028 | 0.230 | 0.069 | 0.120 | 0.790 | 16.5M |
 
-> **Key Advantages:**
-> - **#1 Overall F1** — best cost/quality tradeoff across all 7 systems
-> - **7x fewer tokens than Full Context** — propositions pre-digest information so cheap models answer correctly
+**Key Advantages:**
+ - **#1 Overall F1** — best cost/quality tradeoff across all 7 systems
+ - **7x fewer tokens than Full Context** — propositions pre-digest information so cheap models answer correctly
 
 **Note on adversarial:** Adversarial questions test whether a system correctly refuses trick questions about the wrong person. Published papers ([SimpleMem](https://arxiv.org/abs/2601.02553), [Mem0](https://arxiv.org/abs/2504.19413)) typically exclude adversarial from their averages. Without adversarial, the ranking changes:
 
