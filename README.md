@@ -6,7 +6,7 @@ Semantic memory for agent platforms — what the agent knows *about the user*. P
 - Stored as atomic propositions: `"user is allergic to peanuts"`, `"slope setting is 0.5"`
 - Retrieved via hybrid search (vector + BM25) and fed to the LLM as context
 
-Our implementation (OpenClaw+) extracts propositions via LLM, embeds them, and retrieves with entity-filtered hybrid search. See [OPENCLAW_PLUS.md](OPENCLAW_PLUS.md) for the full design.
+Our implementation (OpenClaw+) extracts propositions via LLM, embeds them, and retrieves with entity-filtered hybrid search. See [OPENCLAW_PLUS.md](OPENCLAW_PLUS.md) for the design.
 
 ## Benchmark
 
@@ -30,7 +30,7 @@ uv sync --all-extras
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
 | **MemU** | Summary extraction | Vector search with intention routing |
 
-**OpenClaw+** wraps OpenClaw's hybrid search with LLM-extracted propositions per entity and entity-filtered retrieval. See [OPENCLAW_PLUS.md](OPENCLAW_PLUS.md) for design decisions and evolution. The rest are open-source baselines used as-is.
+**OpenClaw+** wraps OpenClaw's hybrid search with LLM-extracted propositions per entity and entity-filtered retrieval. See [OPENCLAW_PLUS.md](OPENCLAW_PLUS.md) for design details. The rest are open-source baselines used as-is.
 
 ## LoCoMo Benchmark
 
@@ -62,29 +62,12 @@ All results with gpt-4.1-mini, text-embedding-3-small, token-level F1 scoring. T
 | MemU | 0.180 | 6.9M |
 | OpenClaw | 0.129 | 16.5M |
 
-OpenClaw+ drops to #3 on pure retrieval but remains the most token-efficient of the top 3 (5.3M vs 37.5M and 22.5M). Its advantage is specifically adversarial resistance — entity-filtered retrieval prevents cross-person hallucination, which matters in multi-person conversations but isn't tested by the other 4 categories.
-
 ### Key Findings
 
 - **Full Context and SimpleMem lead on pure retrieval** (excluding adversarial). Full Context has the advantage of seeing everything; SimpleMem's multi-round reflection is genuinely effective.
 - **OpenClaw+ is the best cost/quality tradeoff** — #3 on retrieval at 7x fewer tokens than Full Context, #1 when adversarial resistance matters.
 - **Adversarial resistance correlates with entity awareness**, not retrieval quality. Graphiti (0.875) and OpenClaw+ (0.812) both have entity-centric architectures. SimpleMem (0.299) has none.
-- **OpenClaw collapses with gpt-4.1-mini (0.277)** — raw chunks need a strong model. With gpt-4.1 it jumps to 0.557.
-- **Structured retrieval compensates for weaker models** — OpenClaw+ pre-digests information so even cheap models answer correctly.
-
-### Model Sensitivity (gpt-4.1 vs gpt-4.1-mini)
-
-Tested on 2 conversations (304 QA pairs) with gpt-4.1:
-
-| System | gpt-4.1-mini | gpt-4.1 | Delta | Tokens (gpt-4.1) |
-|--------|-------------|---------|-------|-------------------|
-| OpenClaw+ | 0.556 | 0.601* | +0.045 | 780K |
-| OpenClaw | 0.277 | **0.557** | **+0.280** | 2,481K |
-| Graphiti | 0.415 | 0.337 | -0.078 | 96K |
-
-OpenClaw doubles with gpt-4.1 (+101%). OpenClaw+ barely changes — propositions do the hard work upfront. OpenClaw costs 3.2x more tokens even when it catches up on F1.
-
-*gpt-4.1 OpenClaw+ number is pre-generalization; current code would be slightly lower.
+- **OpenClaw collapses with gpt-4.1-mini (0.277)** — raw chunks need a strong model. OpenClaw+ barely changes because propositions pre-digest information upfront, so even cheap models answer correctly.
 
 ## Reproduce Results
 
@@ -145,10 +128,13 @@ def run_mysystem(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
     )
 
 # Register it
-SYSTEMS["mysystem"] = {
-    "fn": run_mysystem,
-    "architecture": "your architecture description",
-    "infrastructure": "your dependencies",
+SYSTEMS: dict[str, dict] = {
+    # ... existing systems ...
+    "mysystem": {
+        "fn": run_mysystem,
+        "architecture": "your architecture description",
+        "infrastructure": "your dependencies",
+    },
 }
 ```
 
@@ -220,3 +206,5 @@ Token F1 is the primary metric for comparison. LLM judge is supplementary — us
 | Mem0 | [arXiv:2504.19413](https://arxiv.org/abs/2504.19413) |
 | SimpleMem | [arXiv:2601.02553](https://arxiv.org/abs/2601.02553) |
 | Graphiti (Zep AI) | [github.com/getzep/graphiti](https://github.com/getzep/graphiti) |
+| OpenClaw | [docs](https://docs.openclaw.ai/concepts/memory) |
+| MemU | [github.com/NevaMind-AI/memU](https://github.com/NevaMind-AI/memU) |
