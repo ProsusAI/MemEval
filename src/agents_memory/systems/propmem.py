@@ -13,7 +13,9 @@ SYSTEM_INFO = {
 }
 
 
-def run(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     system = PropMemSystem()
     ingest = system.ingest_conversation(conv, client, llm_model)
@@ -26,4 +28,5 @@ def run(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         conv,
         lambda q: system.answer_question(q, client, llm_model)["answer"],
         run_judge,
+        category_names=category_names,
     )
