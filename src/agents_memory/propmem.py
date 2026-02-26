@@ -1,8 +1,8 @@
-"""MemClaw: proposition-based memory with entity-centric retrieval.
+"""PropMem: proposition-based memory with entity-centric retrieval.
 
 Extends OpenClaw's chunk-and-search with proposition extraction,
 entity-filtered retrieval, and CoT answer generation.
-See MEMCLAW.md for design details.
+See PROPMEM.md for design details.
 """
 
 from __future__ import annotations
@@ -139,13 +139,13 @@ class Proposition:
 
 
 # ---------------------------------------------------------------------------
-# MemClawSystem
+# PropMemSystem
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class MemClawSystem:
-    """MemClaw: proposition-based memory with entity-centric retrieval.
+class PropMemSystem:
+    """PropMem: proposition-based memory with entity-centric retrieval.
 
     Ingestion:
       1. Chunk + embed raw markdown (OpenClaw) — fallback retrieval

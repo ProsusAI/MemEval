@@ -1,12 +1,12 @@
-# MemClaw
+# PropMem
 
-MemClaw is the only custom-built memory system in this benchmark. It extends [OpenClaw](https://docs.openclaw.ai/concepts/memory)'s chunk-and-search infrastructure with three layers: LLM-extracted propositions, entity-filtered retrieval, and chain-of-thought answer generation.
+PropMem is a simple yet effective proposition-based memory system. It extends [OpenClaw](https://docs.openclaw.ai/concepts/memory)'s chunk-and-search infrastructure with three layers: LLM-extracted propositions, entity-filtered retrieval, and chain-of-thought answer generation.
 
 ## Base: OpenClaw
 
 OpenClaw chunks conversations into ~400-token markdown segments with 80-token overlap, indexed into SQLite with both BM25 full-text search and vector embeddings. At query time, retrieval merges the two signals (weighted 0.7 vector / 0.3 BM25 for chunks, 0.8 / 0.2 for propositions). No LLM calls at ingestion — only at query time when top-K chunks are fed to the model.
 
-## What MemClaw Adds
+## What PropMem Adds
 
 **1. Proposition extraction (at ingestion)**
 For each conversation session, an LLM extracts atomic facts as date-stamped `{entity, fact}` pairs — e.g. "[7 May 2023] Caroline went to the LGBTQ support group". Each proposition is ~25 words vs ~100 words per raw chunk. The extraction prompt covers both social facts (hobbies, relationships, feelings) and technical content (parameters, configurations, specifications), with instructions to preserve exact values verbatim. A `_recover_partial_json()` fallback handles truncated LLM output.
