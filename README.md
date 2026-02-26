@@ -33,17 +33,21 @@
 
 [LoCoMo](https://arxiv.org/abs/2402.17753) evaluates long-term memory using realistic multi-session dialogues (1,986 QA pairs across 10 conversations). Categories: factual (36%), adversarial (25%), temporal (21%), multi-hop (15%), inferential (4%).
 
-All results with **gpt-4.1-mini**, **text-embedding-3-small**, token-level F1 scoring. Token counts include both ingestion and query — tracked via monkey-patching the OpenAI SDK.
+All results with **gpt-4.1-mini**, **text-embedding-3-small**, token-level F1 scoring. Token counts include both ingestion and query — tracked via monkey-patching the OpenAI SDK (chat completions + responses API).*
 
 | System | Overall | Factual | Temporal | Multi-hop | Adversarial | Tokens |
 |--------|---------|---------|----------|-----------|-------------|--------|
 | **MemClaw** | **0.556 ± 0.037** | 0.379 | 0.506 | 0.540 | **0.812** | **5.3M** |
 | Full Context | 0.545 ± 0.036 | **0.517** | 0.380 | **0.675** | 0.504 | 37.5M |
 | SimpleMem | 0.470 ± 0.043 | 0.393 | **0.583** | 0.555 | 0.299 | 22.5M |
-| Graphiti | 0.415 ± 0.031 | 0.279 | 0.135 | 0.367 | **0.875** | 0.7M |
+| Graphiti | 0.415 ± 0.031 | 0.279 | 0.135 | 0.367 | **0.875** | ~3.0M** |
 | Mem0 | 0.345 ± 0.037 | 0.279 | 0.121 | 0.344 | 0.595 | 3.0M |
 | MemU | 0.310 ± 0.028 | 0.192 | 0.064 | 0.235 | 0.760 | 6.9M |
 | OpenClaw | 0.277 ± 0.028 | 0.230 | 0.069 | 0.120 | 0.790 | 16.5M |
+
+*\*Token counts track LLM calls only (chat completions + responses API). Embedding API calls (text-embedding-3-small) are not included — these are cheap (~$0.02/M tokens) and used by all retrieval-based systems.*
+
+*\*\*Graphiti's original reported 0.7M only tracked answer-generation calls. The corrected ~3.0M (extrapolated from 300K/conversation) includes entity extraction, edge extraction, and deduplication calls via the OpenAI Responses API.*
 
 **Key Advantages:**
  - **#1 Overall F1** — best cost/quality tradeoff across all 7 systems
@@ -56,7 +60,7 @@ All results with **gpt-4.1-mini**, **text-embedding-3-small**, token-level F1 sc
 | Full Context | 0.556 | 37.5M |
 | SimpleMem | 0.520 | 22.5M |
 | **MemClaw** | **0.482** | **5.3M** |
-| Graphiti | 0.281 | 0.7M |
+| Graphiti | 0.281 | ~3.0M** |
 | Mem0 | 0.273 | 3.0M |
 | MemU | 0.180 | 6.9M |
 | OpenClaw | 0.129 | 16.5M |
