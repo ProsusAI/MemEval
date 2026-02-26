@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Unified benchmark runner for all memory systems on LoCoMo.
+"""Unified benchmark runner for memory systems.
 
-Runs any combination of systems across all 10 LoCoMo conversations with
-configurable LLM model and optional judge evaluation.
+Supports multiple benchmarks (LoCoMo, LongMemEval) and any combination of
+memory systems with configurable LLM model and optional judge evaluation.
 
 Usage:
-    # Single system, 1 conversation
-    uv run python scripts/run_full_benchmark.py --systems memclaw --num-samples 1 --skip-judge
+    # LoCoMo (default benchmark), single system, 1 conversation
+    uv run python scripts/run_full_benchmark.py --systems propmem --num-samples 1 --skip-judge
 
-    # All systems, all conversations, gpt-4.1-mini
+    # All systems on LoCoMo, gpt-4.1-mini
     uv run python scripts/run_full_benchmark.py \
         --systems all --num-samples 10 --llm-model gpt-4.1-mini --skip-judge
 
-    # Specific systems
+    # LongMemEval oracle split (cheapest), 1 question
     uv run python scripts/run_full_benchmark.py \
-        --systems memclaw,graphiti --num-samples 10 --skip-judge
+        --benchmark longmemeval --split oracle --systems fullcontext --num-samples 1 --skip-judge
+
+    # LongMemEval S split (115k tokens/question)
+    uv run python scripts/run_full_benchmark.py \
+        --benchmark longmemeval --split s --systems fullcontext --num-samples 1 --skip-judge
 """
 
 from __future__ import annotations
@@ -30,7 +34,8 @@ import numpy as np
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from agents_memory.locomo import download_locomo
+from agents_memory.benchmarks import BENCHMARKS
+from agents_memory.locomo import CATEGORY_NAMES as _DEFAULT_CATEGORIES
 from agents_memory.systems import SYSTEMS
 from agents_memory.token_tracker import get_stats, get_stats_by_model
 from agents_memory.token_tracker import reset as reset_tracker
@@ -49,7 +54,20 @@ sys.stdout.reconfigure(line_buffering=True)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Unified benchmark runner for all memory systems on LoCoMo"
+        description="Unified benchmark runner for memory systems"
+    )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="locomo",
+        choices=list(BENCHMARKS.keys()),
+        help=f"Benchmark to run (default: locomo). Available: {', '.join(BENCHMARKS)}",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default=None,
+        help="Benchmark-specific split (e.g., oracle/s/m for longmemeval)",
     )
     parser.add_argument(
         "--systems",
@@ -84,7 +102,7 @@ def parse_args() -> argparse.Namespace:
         "--data-file",
         type=str,
         default=None,
-        help="Custom data file in LoCoMo format (default: download LoCoMo)",
+        help="Custom data file in LoCoMo format (default: use benchmark registry)",
     )
     return parser.parse_args()
 
@@ -156,31 +174,48 @@ def main() -> None:
             print(f"Available: {list(SYSTEMS.keys())}")
             return
 
+    # Resolve benchmark
+    benchmark_key = args.benchmark
+    bench = BENCHMARKS[benchmark_key]
+    bench_name = bench["name"]
+    category_names = bench.get("category_names", _DEFAULT_CATEGORIES)
+
     # Load data
     if args.data_file:
         print(f"Loading custom data from {args.data_file}")
         with open(args.data_file) as f:
             data = json.load(f)
+        conversations = data if isinstance(data, list) else [data]
+        conversations = conversations[: args.num_samples]
     else:
-        data = download_locomo()
-    conversations = data if isinstance(data, list) else [data]
-    conversations = conversations[: args.num_samples]
+        conversations = bench["download"](
+            split=args.split, num_samples=args.num_samples
+        )
 
     print("=" * 70)
     print("Full Benchmark Runner")
     print("=" * 70)
+    print(
+        f"  Benchmark: {bench_name}"
+        + (f" (split={args.split})" if args.split else "")
+    )
     print(f"  Systems: {', '.join(system_names)}")
     print(f"  LLM Model: {llm_model}")
-    print(f"  Judge: {'enabled (' + judge_model + ')' if run_judge else 'disabled'}")
+    print(
+        f"  Judge: {'enabled (' + judge_model + ')' if run_judge else 'disabled'}"
+    )
     print(f"  Conversations: {len(conversations)}")
     print(f"  Output: {output_dir}")
     print("=" * 70)
 
     # Model name for file naming (sanitize dots)
     model_tag = llm_model.replace(".", "")
+    bench_tag = benchmark_key
+    if args.split:
+        bench_tag = f"{benchmark_key}_{args.split}"
     if args.data_file:
-        dataset_name = Path(args.data_file).stem.replace(".", "")
-        model_tag = f"{dataset_name}_{model_tag}"
+        bench_tag = Path(args.data_file).stem.replace(".", "")
+    model_tag = f"{bench_tag}_{model_tag}"
 
     all_summaries = {}
 
@@ -202,7 +237,9 @@ def main() -> None:
             print(f"\n  [{sys_name}] Conv {sample_id}: {qa_count} QA pairs")
 
             try:
-                results = run_fn(conv, llm_model, run_judge)
+                results = run_fn(
+                    conv, llm_model, run_judge, category_names=category_names
+                )
                 all_results.extend(results)
             except Exception as err:
                 print(f"  ERROR on conv {sample_id}: {err}")
@@ -214,7 +251,9 @@ def main() -> None:
             # Progress
             if all_results:
                 running_f1 = np.mean([r["f1"] for r in all_results])
-                print(f"  Running F1: {running_f1:.3f} ({len(all_results)} questions)")
+                print(
+                    f"  Running F1: {running_f1:.3f} ({len(all_results)} questions)"
+                )
 
         if not all_results:
             print(f"  No results for {sys_name}, skipping")
@@ -232,13 +271,18 @@ def main() -> None:
         print(f"    Questions: {summary['n_questions']}")
         for cat, cs in summary.get("by_category", {}).items():
             print(
-                f"    {cat:12}: F1={cs['f1_mean']:.3f} +/- {cs['f1_std']:.3f} (N={cs['n']})"
+                f"    {cat:12}: F1={cs['f1_mean']:.3f} "
+                f"+/- {cs['f1_std']:.3f} (N={cs['n']})"
             )
-        print(f"    Tokens: {stats['total_tokens']} " f"({stats['calls']} calls)")
+        print(
+            f"    Tokens: {stats['total_tokens']} ({stats['calls']} calls)"
+        )
 
         # Save per-system results
         payload = {
             "system": sys_name,
+            "benchmark": bench_name,
+            "split": args.split,
             "llm_model": llm_model,
             "timestamp": datetime.now().isoformat(),
             "config": {
@@ -273,6 +317,8 @@ def main() -> None:
         summary_path = output_dir / f"benchmark_summary_{model_tag}.json"
         summary_payload = {
             "timestamp": datetime.now().isoformat(),
+            "benchmark": bench_name,
+            "split": args.split,
             "llm_model": llm_model,
             "judge_model": judge_model if run_judge else None,
             "num_conversations": len(conversations),
@@ -284,10 +330,11 @@ def main() -> None:
 
         # Print comparison table
         print(f"\n{'='*70}")
-        print(f"BENCHMARK SUMMARY (model={llm_model})")
+        print(f"BENCHMARK SUMMARY ({bench_name}, model={llm_model})")
         print(f"{'='*70}")
         print(
-            f"  {'System':14} {'F1 Mean':>8} {'F1 Std':>8} {'N QA':>6} {'Tokens':>10}"
+            f"  {'System':14} {'F1 Mean':>8} {'F1 Std':>8} "
+            f"{'N QA':>6} {'Tokens':>10}"
         )
         print(f"  {'-'*14} {'-'*8} {'-'*8} {'-'*6} {'-'*10}")
         for sys_name, s in sorted(
@@ -310,7 +357,10 @@ def main() -> None:
         if all_cats:
             for cat in sorted(all_cats):
                 print(f"\n  {cat}:")
-                print(f"    {'System':14} {'F1 Mean':>8} {'F1 Std':>8} {'N':>6}")
+                print(
+                    f"    {'System':14} {'F1 Mean':>8} "
+                    f"{'F1 Std':>8} {'N':>6}"
+                )
                 print(f"    {'-'*14} {'-'*8} {'-'*8} {'-'*6}")
                 for sys_name, s in sorted(
                     all_summaries.items(),

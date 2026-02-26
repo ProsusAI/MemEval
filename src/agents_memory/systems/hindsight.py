@@ -59,7 +59,9 @@ SYSTEM_INFO = {
 
 
 @run_async
-async def run(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+async def run(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     from hindsight_client import Hindsight
 
     api_key = os.environ["OPENAI_API_KEY"]
@@ -150,4 +152,4 @@ async def run(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         )
         return response.choices[0].message.content.strip()
 
-    return await _qa_results_async(conv, answer_fn, run_judge)
+    return await _qa_results_async(conv, answer_fn, run_judge, category_names=category_names)

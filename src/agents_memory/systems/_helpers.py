@@ -5,18 +5,20 @@ from __future__ import annotations
 import asyncio
 
 from agents_memory.evaluation import compute_f1, evaluate_with_judge
-from agents_memory.locomo import CATEGORY_NAMES
+from agents_memory.locomo import CATEGORY_NAMES as _DEFAULT_CATEGORIES
 
 
 async def _qa_results_async(
     conv: dict,
     answer_fn,
     run_judge: bool,
+    category_names: dict | None = None,
 ) -> list[dict]:
     """Evaluate all QA pairs for a conversation.
 
     Accepts both sync and async answer_fn -- dispatches accordingly.
     """
+    cats = category_names or _DEFAULT_CATEGORIES
     is_async = asyncio.iscoroutinefunction(answer_fn)
     qa_pairs = conv.get("qa", [])
     sample_id = conv.get("sample_id", "unknown")
@@ -41,7 +43,7 @@ async def _qa_results_async(
             "ground_truth": ground_truth,
             "predicted": predicted,
             "category": category,
-            "category_name": CATEGORY_NAMES.get(category, "Unknown"),
+            "category_name": cats.get(category, str(category)),
             "f1": f1,
         }
 
@@ -56,17 +58,23 @@ async def _qa_results_async(
     return results
 
 
-def _qa_results(conv: dict, answer_fn, run_judge: bool) -> list[dict]:
+def _qa_results(
+    conv: dict, answer_fn, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """Sync wrapper around _qa_results_async."""
-    return asyncio.run(_qa_results_async(conv, answer_fn, run_judge))
+    return asyncio.run(
+        _qa_results_async(conv, answer_fn, run_judge, category_names=category_names)
+    )
 
 
 def run_async(async_fn):
     """Wrap an async adapter into the sync signature the runner expects."""
-    def wrapper(conv, llm_model, run_judge):
+    def wrapper(conv, llm_model, run_judge, category_names=None):
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(async_fn(conv, llm_model, run_judge))
+            return loop.run_until_complete(
+                async_fn(conv, llm_model, run_judge, category_names=category_names)
+            )
         finally:
             loop.close()
     wrapper.__doc__ = async_fn.__doc__

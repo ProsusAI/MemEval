@@ -13,7 +13,9 @@ SYSTEM_INFO = {
 }
 
 
-def run(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     from mem0 import Memory
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -92,7 +94,7 @@ def run(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         )
         return response.choices[0].message.content.strip()
 
-    results = _qa_results(conv, answer_fn, run_judge)
+    results = _qa_results(conv, answer_fn, run_judge, category_names=category_names)
 
     # Cleanup
     try:
