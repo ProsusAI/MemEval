@@ -6,7 +6,7 @@ configurable LLM model and optional judge evaluation.
 
 Usage:
     # Single system, 1 conversation
-    uv run python scripts/run_full_benchmark.py --systems memclaw --num-samples 1 --skip-judge
+    uv run python scripts/run_full_benchmark.py --systems propmem --num-samples 1 --skip-judge
 
     # All systems, all conversations, gpt-4.1-mini
     uv run python scripts/run_full_benchmark.py \
@@ -14,7 +14,7 @@ Usage:
 
     # Specific systems
     uv run python scripts/run_full_benchmark.py \
-        --systems memclaw,graphiti --num-samples 10 --skip-judge
+        --systems propmem,graphiti --num-samples 10 --skip-judge
 """
 
 from __future__ import annotations
@@ -149,12 +149,12 @@ async def _qa_results_async(
 # ---------------------------------------------------------------------------
 
 
-def run_memclaw(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
-    """MemClaw: proposition-based entity-centric retrieval."""
-    from agents_memory.memclaw import MemClawSystem
+def run_propmem(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+    """PropMem: proposition-based entity-centric retrieval."""
+    from agents_memory.propmem import PropMemSystem
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    system = MemClawSystem()
+    system = PropMemSystem()
     ingest = system.ingest_conversation(conv, client, llm_model)
     print(
         f"    Ingested: chunks={ingest['num_chunks']}, "
@@ -534,8 +534,8 @@ async def _run_graphiti_async(
 # ---------------------------------------------------------------------------
 
 SYSTEMS: dict[str, dict] = {
-    "memclaw": {
-        "fn": run_memclaw,
+    "propmem": {
+        "fn": run_propmem,
         "architecture": "proposition-based entity-centric retrieval",
         "infrastructure": "vector store + BM25",
     },
