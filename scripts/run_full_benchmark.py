@@ -208,14 +208,15 @@ def main() -> None:
     print(f"  Output: {output_dir}")
     print("=" * 70)
 
-    # Model name for file naming (sanitize dots)
+    # Build unique run tag: benchmark_model_timestamp (never overwrites)
     model_tag = llm_model.replace(".", "")
     bench_tag = benchmark_key
     if args.split:
         bench_tag = f"{benchmark_key}_{args.split}"
     if args.data_file:
         bench_tag = Path(args.data_file).stem.replace(".", "")
-    model_tag = f"{bench_tag}_{model_tag}"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_tag = f"{bench_tag}_{model_tag}_{ts}"
 
     all_summaries = {}
 
@@ -297,7 +298,7 @@ def main() -> None:
             "results": all_results,
         }
 
-        out_path = output_dir / f"{sys_name}_{model_tag}_results.json"
+        out_path = output_dir / f"{sys_name}_{run_tag}_results.json"
         with open(out_path, "w") as f:
             json.dump(payload, f, indent=2)
         print(f"    Saved: {out_path}")
@@ -314,7 +315,7 @@ def main() -> None:
 
     # Save aggregate summary
     if all_summaries:
-        summary_path = output_dir / f"benchmark_summary_{model_tag}.json"
+        summary_path = output_dir / f"benchmark_summary_{run_tag}.json"
         summary_payload = {
             "timestamp": datetime.now().isoformat(),
             "benchmark": bench_name,
