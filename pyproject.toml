@@ -22,6 +22,7 @@ benchmark = [
     "tqdm>=4.66.0",
     "graphiti-core[kuzu]>=0.5",
     "matplotlib>=3.10.8",
+    "huggingface_hub>=0.20.0",
 ]
 dev = [
     "pytest>=7.0.0",
