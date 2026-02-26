@@ -7,7 +7,11 @@ license = {text = "Apache-2.0"}
 authors = [{name = "Prosus Services B.V."}]
 requires-python = ">=3.13"
 dependencies = [
+    "hindsight-client>=0.4.13",
+    "numpy>=2.4.2",
     "openai>=1.0.0",
+    "python-dotenv>=1.2.1",
+    "tqdm>=4.67.3",
 ]
 
 [project.optional-dependencies]

@@ -16,6 +16,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from agents_memory.locomo import extract_dialogues, format_as_markdown
 from agents_memory.openclaw import (
     MemoryChunk,
     chunk_markdown,
@@ -174,24 +175,6 @@ class MemClawSystem:
     # Ingestion
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _format_as_markdown(dialogues: list[dict]) -> str:
-        lines = []
-        current_date = None
-        for d in dialogues:
-            timestamp = d.get("timestamp", "")
-            date_part = timestamp.split(" ")[0] if timestamp else ""
-            if date_part and date_part != current_date:
-                current_date = date_part
-                lines.append(f"\n## {current_date}\n")
-            speaker = d.get("speaker", "Unknown")
-            text = d.get("text", "")
-            if timestamp:
-                lines.append(f"**{speaker}** ({timestamp}): {text}")
-            else:
-                lines.append(f"**{speaker}**: {text}")
-        return "\n".join(lines)
-
     def ingest_conversation(
         self,
         conv: dict,
@@ -210,10 +193,8 @@ class MemClawSystem:
         self.entity_names = [speaker_a, speaker_b]
 
         # 1. Raw chunks (OpenClaw) for fallback
-        from agents_memory.locomo import extract_dialogues
-
         dialogues = extract_dialogues(conv)
-        markdown = self._format_as_markdown(dialogues)
+        markdown = format_as_markdown(dialogues)
         self.chunks = chunk_markdown(markdown, tokens=400, overlap=80)
         if self.chunks:
             self.chunk_embeddings = embed_texts(

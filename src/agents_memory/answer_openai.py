@@ -71,6 +71,58 @@ def clean_short_answer(text: str) -> str:
     return text
 
 
+def _prepare_request(
+    model: str,
+    prompt_style: str,
+    temperature: float,
+    seed: int | None,
+    seed_supported: bool,
+    question: str,
+    memory_text: str,
+    max_tokens: int,
+) -> tuple[str, dict]:
+    """Build cache key and API kwargs shared by sync/async answer agents."""
+    key = hashlib.sha256(
+        f"{model}\n{prompt_style}\n{question}\n{memory_text}".encode()
+    ).hexdigest()
+    if prompt_style == "json_f1":
+        system_prompt = ANSWER_PROMPT_JSON_F1
+        response_format = {"type": "json_object"}
+    else:
+        system_prompt = ANSWER_PROMPT_SHORT
+        response_format = None
+    kwargs: dict = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"Memories:\n{memory_text}\n\nQuestion: {question}",
+            },
+        ],
+        "temperature": temperature,
+        **_max_token_kwargs(model, max_tokens),
+    }
+    if response_format is not None:
+        kwargs["response_format"] = response_format
+    if seed is not None and seed_supported:
+        kwargs["seed"] = int(seed)
+    return key, kwargs
+
+
+def _parse_response(raw_content: str, prompt_style: str) -> str:
+    """Extract answer text from API response, shared by sync/async agents."""
+    if prompt_style == "json_f1":
+        try:
+            obj = json.loads(raw_content)
+            out = str(obj.get("answer", "")).strip()
+        except Exception:
+            out = raw_content
+    else:
+        out = raw_content
+    return clean_short_answer(out)
+
+
 @dataclass
 class OpenAIAnswerAgent:
     model: str = "gpt-4.1"
@@ -86,53 +138,22 @@ class OpenAIAnswerAgent:
         self._client = OpenAI(api_key=self.api_key or os.environ.get("OPENAI_API_KEY"))
 
     def answer(self, question: str, memory_text: str, max_tokens: int = 64) -> str:
-        key = hashlib.sha256(
-            f"{self.model}\n{self.prompt_style}\n{question}\n{memory_text}".encode()
-        ).hexdigest()
+        key, kwargs = _prepare_request(
+            self.model, self.prompt_style, self.temperature,
+            self.seed, self._seed_supported, question, memory_text, max_tokens,
+        )
         if key in self._cache:
             return self._cache[key]
-        if self.prompt_style == "json_f1":
-            system_prompt = ANSWER_PROMPT_JSON_F1
-            response_format = {"type": "json_object"}
-        else:
-            system_prompt = ANSWER_PROMPT_SHORT
-            response_format = None
-        kwargs: dict = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": f"Memories:\n{memory_text}\n\nQuestion: {question}",
-                },
-            ],
-            "temperature": self.temperature,
-            **_max_token_kwargs(self.model, max_tokens),
-        }
-        if response_format is not None:
-            kwargs["response_format"] = response_format
-        if self.seed is not None and self._seed_supported:
-            kwargs["seed"] = int(self.seed)
         try:
             resp = self._client.chat.completions.create(**kwargs)
         except Exception:
-            # Some models/endpoints may not support `seed`. Retry once without it.
             if "seed" in kwargs:
                 self._seed_supported = False
                 kwargs.pop("seed", None)
                 resp = self._client.chat.completions.create(**kwargs)
             else:
                 raise
-        out_raw = resp.choices[0].message.content or ""
-        if self.prompt_style == "json_f1":
-            try:
-                obj = json.loads(out_raw)
-                out = str(obj.get("answer", "")).strip()
-            except Exception:
-                out = out_raw
-        else:
-            out = out_raw
-        out = clean_short_answer(out)
+        out = _parse_response(resp.choices[0].message.content or "", self.prompt_style)
         self._cache[key] = out
         return out
 
@@ -156,33 +177,12 @@ class AsyncOpenAIAnswerAgent:
     async def answer(
         self, question: str, memory_text: str, max_tokens: int = 64
     ) -> str:
-        key = hashlib.sha256(
-            f"{self.model}\n{self.prompt_style}\n{question}\n{memory_text}".encode()
-        ).hexdigest()
+        key, kwargs = _prepare_request(
+            self.model, self.prompt_style, self.temperature,
+            self.seed, self._seed_supported, question, memory_text, max_tokens,
+        )
         if key in self._cache:
             return self._cache[key]
-        if self.prompt_style == "json_f1":
-            system_prompt = ANSWER_PROMPT_JSON_F1
-            response_format = {"type": "json_object"}
-        else:
-            system_prompt = ANSWER_PROMPT_SHORT
-            response_format = None
-        kwargs: dict = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": f"Memories:\n{memory_text}\n\nQuestion: {question}",
-                },
-            ],
-            "temperature": self.temperature,
-            **_max_token_kwargs(self.model, max_tokens),
-        }
-        if response_format is not None:
-            kwargs["response_format"] = response_format
-        if self.seed is not None and self._seed_supported:
-            kwargs["seed"] = int(self.seed)
         try:
             resp = await self._client.chat.completions.create(**kwargs)
         except Exception:
@@ -192,15 +192,6 @@ class AsyncOpenAIAnswerAgent:
                 resp = await self._client.chat.completions.create(**kwargs)
             else:
                 raise
-        out_raw = resp.choices[0].message.content or ""
-        if self.prompt_style == "json_f1":
-            try:
-                obj = json.loads(out_raw)
-                out = str(obj.get("answer", "")).strip()
-            except Exception:
-                out = out_raw
-        else:
-            out = out_raw
-        out = clean_short_answer(out)
+        out = _parse_response(resp.choices[0].message.content or "", self.prompt_style)
         self._cache[key] = out
         return out

@@ -4,6 +4,7 @@ import threading
 from collections import defaultdict
 
 import openai.resources.chat.completions
+import openai.resources.responses.responses
 
 _lock = threading.Lock()
 _stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
@@ -12,6 +13,10 @@ _stats_by_model: dict[str, dict[str, int]] = defaultdict(
 )
 _original_create = None
 _original_async_create = None
+_original_responses_create = None
+_original_responses_async_create = None
+_original_responses_parse = None
+_original_responses_async_parse = None
 
 
 def _record_usage(
@@ -84,6 +89,19 @@ class _AsyncStreamWrapper:
         return await self._stream.__aexit__(*args)
 
 
+def _extract_usage(response, model: str | None = None) -> None:
+    """Extract and record token usage from any OpenAI response format."""
+    usage = getattr(response, "usage", None)
+    if not usage:
+        return
+    # Chat Completions API uses prompt_tokens/completion_tokens
+    # Responses API uses input_tokens/output_tokens
+    prompt = getattr(usage, "prompt_tokens", 0) or getattr(usage, "input_tokens", 0) or 0
+    completion = getattr(usage, "completion_tokens", 0) or getattr(usage, "output_tokens", 0) or 0
+    if prompt or completion:
+        _record_usage(prompt, completion, model)
+
+
 def _tracked_create(*args, **kwargs):
     model = kwargs.get("model")
     is_stream = kwargs.get("stream", False)
@@ -99,13 +117,7 @@ def _tracked_create(*args, **kwargs):
     if is_stream:
         return _StreamWrapper(response, model)
 
-    if hasattr(response, "usage") and response.usage:
-        _record_usage(
-            response.usage.prompt_tokens or 0,
-            response.usage.completion_tokens or 0,
-            model,
-        )
-
+    _extract_usage(response, model)
     return response
 
 
@@ -124,19 +136,54 @@ async def _tracked_async_create(*args, **kwargs):
     if is_stream:
         return _AsyncStreamWrapper(response, model)
 
-    if hasattr(response, "usage") and response.usage:
-        _record_usage(
-            response.usage.prompt_tokens or 0,
-            response.usage.completion_tokens or 0,
-            model,
-        )
+    _extract_usage(response, model)
+    return response
 
+
+# ---------------------------------------------------------------------------
+# Responses API wrappers (responses.create / responses.parse)
+# ---------------------------------------------------------------------------
+
+
+def _tracked_responses_create(*args, **kwargs):
+    model = kwargs.get("model")
+    response = _original_responses_create(*args, **kwargs)
+    _record_call(model)
+    _extract_usage(response, model)
+    return response
+
+
+async def _tracked_responses_async_create(*args, **kwargs):
+    model = kwargs.get("model")
+    response = await _original_responses_async_create(*args, **kwargs)
+    _record_call(model)
+    _extract_usage(response, model)
+    return response
+
+
+def _tracked_responses_parse(*args, **kwargs):
+    model = kwargs.get("model")
+    response = _original_responses_parse(*args, **kwargs)
+    _record_call(model)
+    _extract_usage(response, model)
+    return response
+
+
+async def _tracked_responses_async_parse(*args, **kwargs):
+    model = kwargs.get("model")
+    response = await _original_responses_async_parse(*args, **kwargs)
+    _record_call(model)
+    _extract_usage(response, model)
     return response
 
 
 def start():
     """Patch OpenAI client (sync and async) to start tracking."""
     global _original_create, _original_async_create
+    global _original_responses_create, _original_responses_async_create
+    global _original_responses_parse, _original_responses_async_parse
+
+    # Chat Completions API
     if _original_create is None:
         _original_create = openai.resources.chat.completions.Completions.create
         openai.resources.chat.completions.Completions.create = _tracked_create
@@ -147,6 +194,23 @@ def start():
         openai.resources.chat.completions.AsyncCompletions.create = (
             _tracked_async_create
         )
+
+    # Responses API (used by e.g. graphiti-core)
+    _Responses = openai.resources.responses.responses.Responses
+    _AsyncResponses = openai.resources.responses.responses.AsyncResponses
+
+    if _original_responses_create is None:
+        _original_responses_create = _Responses.create
+        _Responses.create = _tracked_responses_create
+    if _original_responses_async_create is None:
+        _original_responses_async_create = _AsyncResponses.create
+        _AsyncResponses.create = _tracked_responses_async_create
+    if _original_responses_parse is None:
+        _original_responses_parse = _Responses.parse
+        _Responses.parse = _tracked_responses_parse
+    if _original_responses_async_parse is None:
+        _original_responses_async_parse = _AsyncResponses.parse
+        _AsyncResponses.parse = _tracked_responses_async_parse
 
 
 def get_stats():
