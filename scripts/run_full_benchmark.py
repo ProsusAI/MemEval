@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Unified benchmark runner for all memory systems on LoCoMo.
+"""Unified benchmark runner for memory systems.
 
-Runs any combination of systems across all 10 LoCoMo conversations with
-configurable LLM model and optional judge evaluation.
+Supports multiple benchmarks (LoCoMo, LongMemEval) and any combination of
+memory systems with configurable LLM model and optional judge evaluation.
 
 Usage:
-    # Single system, 1 conversation
+    # LoCoMo (default benchmark), single system, 1 conversation
     uv run python scripts/run_full_benchmark.py --systems memclaw --num-samples 1 --skip-judge
 
-    # All systems, all conversations, gpt-4.1-mini
+    # All systems on LoCoMo, gpt-4.1-mini
     uv run python scripts/run_full_benchmark.py \
         --systems all --num-samples 10 --llm-model gpt-4.1-mini --skip-judge
 
-    # Specific systems
+    # LongMemEval oracle split (cheapest), 1 question
     uv run python scripts/run_full_benchmark.py \
-        --systems memclaw,graphiti --num-samples 10 --skip-judge
+        --benchmark longmemeval --split oracle --systems fullcontext --num-samples 1 --skip-judge
+
+    # LongMemEval S split (115k tokens/question)
+    uv run python scripts/run_full_benchmark.py \
+        --benchmark longmemeval --split s --systems fullcontext --num-samples 1 --skip-judge
 """
 
 from __future__ import annotations
@@ -33,8 +37,10 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
 
+from agents_memory.benchmarks import BENCHMARKS
 from agents_memory.evaluation import compute_f1, evaluate_with_judge
-from agents_memory.locomo import CATEGORY_NAMES, download_locomo, extract_dialogues
+from agents_memory.locomo import CATEGORY_NAMES as _DEFAULT_CATEGORIES
+from agents_memory.locomo import extract_dialogues
 from agents_memory.token_tracker import get_stats, get_stats_by_model
 from agents_memory.token_tracker import reset as reset_tracker
 from agents_memory.token_tracker import start as start_tracking
@@ -54,11 +60,13 @@ def _qa_results(
     conv: dict,
     answer_fn,
     run_judge: bool,
+    category_names: dict | None = None,
 ) -> list[dict]:
     """Evaluate all QA pairs for a conversation using the given answer function.
 
     answer_fn(question: str) -> str  (returns predicted answer)
     """
+    cats = category_names or _DEFAULT_CATEGORIES
     qa_pairs = conv.get("qa", [])
     sample_id = conv.get("sample_id", "unknown")
     results = []
@@ -82,7 +90,7 @@ def _qa_results(
             "ground_truth": ground_truth,
             "predicted": predicted,
             "category": category,
-            "category_name": CATEGORY_NAMES.get(category, "Unknown"),
+            "category_name": cats.get(category, str(category)),
             "f1": f1,
         }
 
@@ -101,11 +109,13 @@ async def _qa_results_async(
     conv: dict,
     answer_fn,
     run_judge: bool,
+    category_names: dict | None = None,
 ) -> list[dict]:
     """Async version of _qa_results.
 
     answer_fn(question: str) -> Awaitable[str]
     """
+    cats = category_names or _DEFAULT_CATEGORIES
     qa_pairs = conv.get("qa", [])
     sample_id = conv.get("sample_id", "unknown")
     results = []
@@ -129,7 +139,7 @@ async def _qa_results_async(
             "ground_truth": ground_truth,
             "predicted": predicted,
             "category": category,
-            "category_name": CATEGORY_NAMES.get(category, "Unknown"),
+            "category_name": cats.get(category, str(category)),
             "f1": f1,
         }
 
@@ -149,7 +159,9 @@ async def _qa_results_async(
 # ---------------------------------------------------------------------------
 
 
-def run_memclaw(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_memclaw(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """MemClaw: proposition-based entity-centric retrieval."""
     from agents_memory.memclaw import MemClawSystem
 
@@ -165,10 +177,13 @@ def run_memclaw(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         conv,
         lambda q: system.answer_question(q, client, llm_model)["answer"],
         run_judge,
+        category_names=category_names,
     )
 
 
-def run_openclaw(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_openclaw(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """OpenClaw: hybrid BM25 + vector chunk retrieval."""
     from agents_memory.openclaw import chunk_markdown, embed_texts, hybrid_search
 
@@ -232,10 +247,12 @@ def run_openclaw(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         )
         return response.choices[0].message.content.strip()
 
-    return _qa_results(conv, answer_fn, run_judge)
+    return _qa_results(conv, answer_fn, run_judge, category_names=category_names)
 
 
-def run_simplemem(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_simplemem(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """SimpleMem: multi-round retrieval with parallel processing."""
     from simplemem import SimpleMemConfig, SimpleMemSystem, set_config
     from simplemem.models.memory_entry import Dialogue
@@ -267,10 +284,13 @@ def run_simplemem(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         conv,
         lambda q: memory.ask(q),
         run_judge,
+        category_names=category_names,
     )
 
 
-def run_mem0(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_mem0(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """Mem0: memory extraction + vector search."""
     from mem0 import Memory
 
@@ -350,7 +370,7 @@ def run_mem0(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         )
         return response.choices[0].message.content.strip()
 
-    results = _qa_results(conv, answer_fn, run_judge)
+    results = _qa_results(conv, answer_fn, run_judge, category_names=category_names)
 
     # Cleanup
     try:
@@ -361,16 +381,22 @@ def run_mem0(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
     return results
 
 
-def run_memu(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_memu(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """MemU: memory service with file-based memorize."""
     loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(_run_memu_async(conv, llm_model, run_judge))
+        return loop.run_until_complete(
+            _run_memu_async(conv, llm_model, run_judge, category_names)
+        )
     finally:
         loop.close()
 
 
-async def _run_memu_async(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+async def _run_memu_async(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     from memu.app.service import MemoryService
 
     dialogues = extract_dialogues(conv)
@@ -442,12 +468,16 @@ async def _run_memu_async(conv: dict, llm_model: str, run_judge: bool) -> list[d
             )
             return response.choices[0].message.content.strip()
 
-        return await _qa_results_async(conv, answer_fn, run_judge)
+        return await _qa_results_async(
+            conv, answer_fn, run_judge, category_names=category_names
+        )
     finally:
         Path(temp_path).unlink(missing_ok=True)
 
 
-def run_fullcontext(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_fullcontext(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """Full context baseline: entire conversation in prompt."""
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     dialogues = extract_dialogues(conv)
@@ -493,20 +523,24 @@ def run_fullcontext(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
         )
         return response.choices[0].message.content.strip()
 
-    return _qa_results(conv, answer_fn, run_judge)
+    return _qa_results(conv, answer_fn, run_judge, category_names=category_names)
 
 
-def run_graphiti(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
+def run_graphiti(
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+) -> list[dict]:
     """Graphiti: temporal knowledge graph (Kuzu embedded)."""
     loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(_run_graphiti_async(conv, llm_model, run_judge))
+        return loop.run_until_complete(
+            _run_graphiti_async(conv, llm_model, run_judge, category_names)
+        )
     finally:
         loop.close()
 
 
 async def _run_graphiti_async(
-    conv: dict, llm_model: str, run_judge: bool
+    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
 ) -> list[dict]:
     from agents_memory.answer_openai import AsyncOpenAIAnswerAgent
     from agents_memory.graphiti_system import GraphitiSystem
@@ -524,7 +558,9 @@ async def _run_graphiti_async(
             result = await system.answer_question(question, answer_agent)
             return result["answer"]
 
-        return await _qa_results_async(conv, answer_fn, run_judge)
+        return await _qa_results_async(
+            conv, answer_fn, run_judge, category_names=category_names
+        )
     finally:
         await system.close()
 
@@ -579,7 +615,20 @@ SYSTEMS: dict[str, dict] = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Unified benchmark runner for all memory systems on LoCoMo"
+        description="Unified benchmark runner for memory systems"
+    )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="locomo",
+        choices=list(BENCHMARKS.keys()),
+        help=f"Benchmark to run (default: locomo). Available: {', '.join(BENCHMARKS)}",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default=None,
+        help="Benchmark-specific split (e.g., oracle/s/m for longmemeval)",
     )
     parser.add_argument(
         "--systems",
@@ -614,7 +663,7 @@ def parse_args() -> argparse.Namespace:
         "--data-file",
         type=str,
         default=None,
-        help="Custom data file in LoCoMo format (default: download LoCoMo)",
+        help="Custom data file in LoCoMo format (default: use benchmark registry)",
     )
     return parser.parse_args()
 
@@ -686,19 +735,26 @@ def main() -> None:
             print(f"Available: {list(SYSTEMS.keys())}")
             return
 
+    # Resolve benchmark
+    benchmark_key = args.benchmark
+    bench = BENCHMARKS[benchmark_key]
+    bench_name = bench["name"]
+    category_names = bench.get("category_names", _DEFAULT_CATEGORIES)
+
     # Load data
     if args.data_file:
         print(f"Loading custom data from {args.data_file}")
         with open(args.data_file) as f:
             data = json.load(f)
+        conversations = data if isinstance(data, list) else [data]
+        conversations = conversations[: args.num_samples]
     else:
-        data = download_locomo()
-    conversations = data if isinstance(data, list) else [data]
-    conversations = conversations[: args.num_samples]
+        conversations = bench["download"](split=args.split, num_samples=args.num_samples)
 
     print("=" * 70)
     print("Full Benchmark Runner")
     print("=" * 70)
+    print(f"  Benchmark: {bench_name}" + (f" (split={args.split})" if args.split else ""))
     print(f"  Systems: {', '.join(system_names)}")
     print(f"  LLM Model: {llm_model}")
     print(f"  Judge: {'enabled (' + judge_model + ')' if run_judge else 'disabled'}")
@@ -708,9 +764,12 @@ def main() -> None:
 
     # Model name for file naming (sanitize dots)
     model_tag = llm_model.replace(".", "")
+    bench_tag = benchmark_key
+    if args.split:
+        bench_tag = f"{benchmark_key}_{args.split}"
     if args.data_file:
-        dataset_name = Path(args.data_file).stem.replace(".", "")
-        model_tag = f"{dataset_name}_{model_tag}"
+        bench_tag = Path(args.data_file).stem.replace(".", "")
+    model_tag = f"{bench_tag}_{model_tag}"
 
     all_summaries = {}
 
@@ -732,7 +791,7 @@ def main() -> None:
             print(f"\n  [{sys_name}] Conv {sample_id}: {qa_count} QA pairs")
 
             try:
-                results = run_fn(conv, llm_model, run_judge)
+                results = run_fn(conv, llm_model, run_judge, category_names=category_names)
                 all_results.extend(results)
             except Exception as err:
                 print(f"  ERROR on conv {sample_id}: {err}")
@@ -769,6 +828,8 @@ def main() -> None:
         # Save per-system results
         payload = {
             "system": sys_name,
+            "benchmark": bench_name,
+            "split": args.split,
             "llm_model": llm_model,
             "timestamp": datetime.now().isoformat(),
             "config": {
@@ -803,6 +864,8 @@ def main() -> None:
         summary_path = output_dir / f"benchmark_summary_{model_tag}.json"
         summary_payload = {
             "timestamp": datetime.now().isoformat(),
+            "benchmark": bench_name,
+            "split": args.split,
             "llm_model": llm_model,
             "judge_model": judge_model if run_judge else None,
             "num_conversations": len(conversations),
@@ -814,7 +877,7 @@ def main() -> None:
 
         # Print comparison table
         print(f"\n{'='*70}")
-        print(f"BENCHMARK SUMMARY (model={llm_model})")
+        print(f"BENCHMARK SUMMARY ({bench_name}, model={llm_model})")
         print(f"{'='*70}")
         print(
             f"  {'System':14} {'F1 Mean':>8} {'F1 Std':>8} {'N QA':>6} {'Tokens':>10}"
