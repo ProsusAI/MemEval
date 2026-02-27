@@ -12,9 +12,19 @@ SYSTEM_INFO = {
     "infrastructure": "mem0 library",
 }
 
+_ANSWER_PROMPT_SHORT = (
+    "Answer the question concisely (1-5 words) using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
+_ANSWER_PROMPT_NATURAL = (
+    "Answer the question concisely but completely using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
+
 
 def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     from mem0 import Memory
 
@@ -61,6 +71,11 @@ def run(
 
     print(f"    Dialogues ingested: {len(dialogues)}")
 
+    sys_prompt = (
+        _ANSWER_PROMPT_NATURAL if judge_fn == "longmemeval"
+        else _ANSWER_PROMPT_SHORT
+    )
+
     def answer_fn(question: str) -> str:
         search_results = memory.search(query=question, user_id=user_id, limit=20)
         memories_list = (
@@ -77,13 +92,7 @@ def run(
         response = client.chat.completions.create(
             model=llm_model,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Answer the question concisely (1-5 words) using ONLY the "
-                        "provided memories. If not found, say 'None'."
-                    ),
-                },
+                {"role": "system", "content": sys_prompt},
                 {
                     "role": "user",
                     "content": f"Memories:\n{memory_text}\n\nQuestion: {question}",
@@ -94,7 +103,10 @@ def run(
         )
         return response.choices[0].message.content.strip()
 
-    results = _qa_results(conv, answer_fn, run_judge, category_names=category_names)
+    results = _qa_results(
+        conv, answer_fn, run_judge,
+        category_names=category_names, judge_fn=judge_fn,
+    )
 
     # Cleanup
     try:

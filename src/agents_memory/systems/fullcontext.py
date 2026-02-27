@@ -14,7 +14,8 @@ SYSTEM_INFO = {
 
 
 def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     dialogues = extract_dialogues(conv)
@@ -30,18 +31,32 @@ def run(
     conversation_text = "\n".join(lines)
     print(f"    Context: ~{len(conversation_text) // 4} tokens")
 
-    prompt_template = (
-        "You are answering questions about a conversation between two people.\n"
-        "The conversation history is provided below. Answer based ONLY on information "
-        "in the conversation.\n\n"
-        "Rules:\n"
-        "1. Give the SHORTEST answer possible - just the key fact (1-5 words max)\n"
-        "2. Use EXACT words from the conversation when possible\n"
-        "3. NO full sentences, NO explanations\n"
-        "4. For dates, use the format from the conversation\n"
-        "5. If the answer is truly not in the conversation, say 'None'\n\n"
-        "CONVERSATION:\n{conversation}\n\nNow answer this question: {question}"
-    )
+    if judge_fn == "longmemeval":
+        prompt_template = (
+            "You are answering questions about a conversation between two people.\n"
+            "The conversation history is provided below. Answer based ONLY on "
+            "information in the conversation.\n\n"
+            "Rules:\n"
+            "1. Answer concisely but completely — include all relevant facts\n"
+            "2. Use EXACT words from the conversation when possible\n"
+            "3. For dates, use the format from the conversation\n"
+            "4. If the answer is truly not in the conversation, say 'None'\n\n"
+            "CONVERSATION:\n{conversation}\n\nNow answer this question: {question}"
+        )
+    else:
+        prompt_template = (
+            "You are answering questions about a conversation between two people.\n"
+            "The conversation history is provided below. Answer based ONLY on "
+            "information in the conversation.\n\n"
+            "Rules:\n"
+            "1. Give the SHORTEST answer possible - just the key fact "
+            "(1-5 words max)\n"
+            "2. Use EXACT words from the conversation when possible\n"
+            "3. NO full sentences, NO explanations\n"
+            "4. For dates, use the format from the conversation\n"
+            "5. If the answer is truly not in the conversation, say 'None'\n\n"
+            "CONVERSATION:\n{conversation}\n\nNow answer this question: {question}"
+        )
 
     def answer_fn(question: str) -> str:
         response = client.chat.completions.create(
@@ -60,4 +75,7 @@ def run(
         )
         return response.choices[0].message.content.strip()
 
-    return _qa_results(conv, answer_fn, run_judge, category_names=category_names)
+    return _qa_results(
+        conv, answer_fn, run_judge,
+        category_names=category_names, judge_fn=judge_fn,
+    )

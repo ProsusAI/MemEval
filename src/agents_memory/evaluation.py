@@ -137,6 +137,107 @@ def compute_f1(predicted: str, ground_truth: str | int) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def evaluate_longmemeval(
+    question: str,
+    expected: str,
+    predicted: str,
+    category: str = "",
+    question_id: str = "",
+) -> dict:
+    """LongMemEval native judge — binary accuracy via GPT-4o.
+
+    Matches the exact prompts from the LongMemEval paper (ICLR 2025) so
+    results are directly comparable to published numbers.
+
+    Returns:
+        dict with longmemeval_correct (0 or 1).
+    """
+    abstention = "_abs" in question_id
+
+    if abstention:
+        template = (
+            "I will give you an unanswerable question, an explanation, and "
+            "a response from a model. Please answer yes if the model correctly "
+            "identifies the question as unanswerable. The model could say that "
+            "the information is incomplete, or some other information is given "
+            "but the asked information is not.\n\n"
+            "Question: {q}\n\nExplanation: {a}\n\nModel Response: {r}\n\n"
+            "Does the model correctly identify the question as unanswerable? "
+            "Answer yes or no only."
+        )
+    elif category == "temporal-reasoning":
+        template = (
+            "I will give you a question, a correct answer, and a response from "
+            "a model. Please answer yes if the response contains the correct "
+            "answer. Otherwise, answer no. If the response is equivalent to the "
+            "correct answer or contains all the intermediate steps to get the "
+            "correct answer, you should also answer yes. If the response only "
+            "contains a subset of the information required by the answer, answer "
+            "no. In addition, do not penalize off-by-one errors for the number "
+            "of days. If the question asks for the number of days/weeks/months, "
+            "etc., and the model makes off-by-one errors (e.g., predicting 19 "
+            "days when the answer is 18), the model's response is still "
+            "correct. \n\nQuestion: {q}\n\nCorrect Answer: {a}\n\n"
+            "Model Response: {r}\n\nIs the model response correct? "
+            "Answer yes or no only."
+        )
+    elif category == "knowledge-update":
+        template = (
+            "I will give you a question, a correct answer, and a response from "
+            "a model. Please answer yes if the response contains the correct "
+            "answer. Otherwise, answer no. If the response contains some "
+            "previous information along with an updated answer, the response "
+            "should be considered as correct as long as the updated answer is "
+            "the required answer.\n\nQuestion: {q}\n\nCorrect Answer: {a}\n\n"
+            "Model Response: {r}\n\nIs the model response correct? "
+            "Answer yes or no only."
+        )
+    elif category == "single-session-preference":
+        template = (
+            "I will give you a question, a rubric for desired personalized "
+            "response, and a response from a model. Please answer yes if the "
+            "response satisfies the desired response. Otherwise, answer no. "
+            "The model does not need to reflect all the points in the rubric. "
+            "The response is correct as long as it recalls and utilizes the "
+            "user's personal information correctly.\n\n"
+            "Question: {q}\n\nRubric: {a}\n\n"
+            "Model Response: {r}\n\nIs the model response correct? "
+            "Answer yes or no only."
+        )
+    else:
+        # single-session-user, single-session-assistant, multi-session
+        template = (
+            "I will give you a question, a correct answer, and a response from "
+            "a model. Please answer yes if the response contains the correct "
+            "answer. Otherwise, answer no. If the response is equivalent to the "
+            "correct answer or contains all the intermediate steps to get the "
+            "correct answer, you should also answer yes. If the response only "
+            "contains a subset of the information required by the answer, answer "
+            "no. \n\nQuestion: {q}\n\nCorrect Answer: {a}\n\n"
+            "Model Response: {r}\n\nIs the model response correct? "
+            "Answer yes or no only."
+        )
+
+    prompt = template.format(q=question, a=expected, r=predicted)
+    judge_model = os.environ.get("LONGMEMEVAL_JUDGE_MODEL", "gpt-4o")
+
+    try:
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        response = client.chat.completions.create(
+            model=judge_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=10,
+        )
+        eval_text = response.choices[0].message.content.strip().lower()
+        correct = 1 if "yes" in eval_text else 0
+    except Exception as e:
+        print(f"  LongMemEval judge error: {e}")
+        correct = 0
+
+    return {"longmemeval_correct": correct}
+
+
 def evaluate_with_judge(question: str, expected: str, predicted: str) -> dict:
     """3-dimension LLM-as-judge evaluation (relevant / complete / accurate).
 

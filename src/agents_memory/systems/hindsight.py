@@ -60,7 +60,8 @@ SYSTEM_INFO = {
 
 @run_async
 async def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     from hindsight_client import Hindsight
 
@@ -112,6 +113,13 @@ async def run(
 
     # Answer questions using recall + OpenAI
     client = OpenAI(api_key=api_key)
+    sys_prompt = (
+        "Answer the question concisely but completely using ONLY the "
+        "provided memories. If not found, say 'None'."
+        if judge_fn == "longmemeval"
+        else "Answer the question concisely (1-5 words) using ONLY the "
+        "provided memories. If not found, say 'None'."
+    )
 
     async def answer_fn(question: str) -> str:
         recall_resp = await hs.arecall(
@@ -135,13 +143,7 @@ async def run(
         response = client.chat.completions.create(
             model=llm_model,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Answer the question concisely (1-5 words) using ONLY the "
-                        "provided memories. If not found, say 'None'."
-                    ),
-                },
+                {"role": "system", "content": sys_prompt},
                 {
                     "role": "user",
                     "content": f"Memories:\n{memory_text}\n\nQuestion: {question}",
@@ -152,4 +154,7 @@ async def run(
         )
         return response.choices[0].message.content.strip()
 
-    return await _qa_results_async(conv, answer_fn, run_judge, category_names=category_names)
+    return await _qa_results_async(
+        conv, answer_fn, run_judge,
+        category_names=category_names, judge_fn=judge_fn,
+    )
