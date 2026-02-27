@@ -1,7 +1,7 @@
 <p align="center">
   <img src="assets/logo.png" alt="MemEval" width="140"/>
   <br/>
-  <em>Apples-to-apples benchmark for agent memory systems</em>
+  <em>Fair evaluation framework for agent memory</em>
   <br/><br/>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue"/></a>
   <img src="https://img.shields.io/badge/python-3.13%2B-blue"/>
