@@ -55,7 +55,8 @@ EmbeddingModel.encode = _openai_encode
 
 
 def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     from simplemem import SimpleMemConfig, SimpleMemSystem, set_config
     from simplemem.models.memory_entry import Dialogue
@@ -88,4 +89,5 @@ def run(
         lambda q: memory.ask(q),
         run_judge,
         category_names=category_names,
+        judge_fn=judge_fn,
     )

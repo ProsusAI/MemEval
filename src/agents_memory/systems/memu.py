@@ -15,10 +15,20 @@ SYSTEM_INFO = {
     "infrastructure": "MemU library",
 }
 
+_ANSWER_PROMPT_SHORT = (
+    "Answer the question concisely (1-5 words) using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
+_ANSWER_PROMPT_NATURAL = (
+    "Answer the question concisely but completely using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
+
 
 @run_async
 async def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     from memu.app.service import MemoryService
 
@@ -52,6 +62,11 @@ async def run(
         json.dump(conv_data, f)
         temp_path = f.name
 
+    sys_prompt = (
+        _ANSWER_PROMPT_NATURAL if judge_fn == "longmemeval"
+        else _ANSWER_PROMPT_SHORT
+    )
+
     try:
         await service.memorize(
             resource_url=temp_path,
@@ -74,13 +89,7 @@ async def run(
             response = client.chat.completions.create(
                 model=llm_model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Answer the question concisely (1-5 words) using ONLY the "
-                            "provided memories. If not found, say 'None'."
-                        ),
-                    },
+                    {"role": "system", "content": sys_prompt},
                     {
                         "role": "user",
                         "content": f"Memories:\n{memory_text}\n\nQuestion: {question}",
@@ -91,6 +100,9 @@ async def run(
             )
             return response.choices[0].message.content.strip()
 
-        return await _qa_results_async(conv, answer_fn, run_judge, category_names=category_names)
+        return await _qa_results_async(
+            conv, answer_fn, run_judge,
+            category_names=category_names, judge_fn=judge_fn,
+        )
     finally:
         Path(temp_path).unlink(missing_ok=True)

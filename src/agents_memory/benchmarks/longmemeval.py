@@ -41,6 +41,7 @@ BENCHMARK_INFO: dict = {
         "with variable-size haystacks"
     ),
     "category_names": CATEGORY_NAMES,
+    "judge_fn": "longmemeval",
 }
 
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "longmemeval"
@@ -112,14 +113,16 @@ def _normalize(item: dict) -> dict:
     if not isinstance(answer, str):
         answer = str(answer)
 
+    question_id = item.get("question_id", "unknown")
     return {
-        "sample_id": item.get("question_id", "unknown"),
+        "sample_id": question_id,
         "conversation": conversation,
         "qa": [
             {
                 "question": item.get("question", ""),
                 "answer": answer,
                 "category": item.get("question_type", "unknown"),
+                "question_id": question_id,
             }
         ],
     }

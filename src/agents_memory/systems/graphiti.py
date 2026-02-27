@@ -10,7 +10,8 @@ SYSTEM_INFO = {
 
 @run_async
 async def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     from agents_memory.answer_openai import AsyncOpenAIAnswerAgent
     from agents_memory.graphiti_system import GraphitiSystem
@@ -28,6 +29,9 @@ async def run(
             result = await system.answer_question(question, answer_agent)
             return result["answer"]
 
-        return await _qa_results_async(conv, answer_fn, run_judge, category_names=category_names)
+        return await _qa_results_async(
+            conv, answer_fn, run_judge,
+            category_names=category_names, judge_fn=judge_fn,
+        )
     finally:
         await system.close()

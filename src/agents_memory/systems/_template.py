@@ -18,7 +18,8 @@ SYSTEM_INFO = {
 
 
 def run(
-    conv: dict, llm_model: str, run_judge: bool, category_names: dict | None = None
+    conv: dict, llm_model: str, run_judge: bool,
+    category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     dialogues = extract_dialogues(conv)
@@ -35,4 +36,7 @@ def run(
         raise NotImplementedError("Fill in answer logic")
 
     # --- 3. EVALUATE: this handles scoring, don't change ---
-    return _qa_results(conv, answer_fn, run_judge, category_names=category_names)
+    return _qa_results(
+        conv, answer_fn, run_judge,
+        category_names=category_names, judge_fn=judge_fn,
+    )

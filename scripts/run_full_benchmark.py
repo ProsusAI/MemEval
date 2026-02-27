@@ -108,19 +108,30 @@ def parse_args() -> argparse.Namespace:
 
 
 def _compute_summary(all_results: list[dict]) -> dict:
-    """Compute mean +/- std F1 overall and by category."""
+    """Compute mean +/- std F1 overall and by category.
+
+    Also computes LongMemEval binary accuracy when ``longmemeval_correct``
+    is present in result rows.
+    """
     if not all_results:
         return {}
 
     # Group by conversation for per-conversation F1
     by_conv: dict[str, list[float]] = {}
     by_category: dict[str, list[float]] = {}
+    # LongMemEval accuracy (if present)
+    by_category_acc: dict[str, list[int]] = {}
+    has_lme_acc = "longmemeval_correct" in all_results[0]
 
     for r in all_results:
         sid = r["sample_id"]
         by_conv.setdefault(sid, []).append(r["f1"])
         cat_name = r.get("category_name", "Unknown")
         by_category.setdefault(cat_name, []).append(r["f1"])
+        if has_lme_acc:
+            by_category_acc.setdefault(cat_name, []).append(
+                r.get("longmemeval_correct", 0)
+            )
 
     # Per-conversation F1
     conv_f1s = {sid: np.mean(scores) for sid, scores in by_conv.items()}
@@ -138,12 +149,27 @@ def _compute_summary(all_results: list[dict]) -> dict:
         "by_category": {},
     }
 
+    # LongMemEval overall accuracy
+    if has_lme_acc:
+        all_correct = [r.get("longmemeval_correct", 0) for r in all_results]
+        summary["longmemeval_accuracy"] = float(np.mean(all_correct))
+        # Task-averaged accuracy (mean of per-category means)
+        cat_accs = [
+            float(np.mean(v)) for v in by_category_acc.values()
+        ]
+        summary["longmemeval_task_avg_accuracy"] = float(np.mean(cat_accs))
+
     for cat_name, scores in sorted(by_category.items()):
-        summary["by_category"][cat_name] = {
+        cat_entry = {
             "f1_mean": float(np.mean(scores)),
             "f1_std": float(np.std(scores)),
             "n": len(scores),
         }
+        if has_lme_acc and cat_name in by_category_acc:
+            cat_entry["accuracy"] = float(
+                np.mean(by_category_acc[cat_name])
+            )
+        summary["by_category"][cat_name] = cat_entry
 
     return summary
 
@@ -179,6 +205,7 @@ def main() -> None:
     bench = BENCHMARKS[benchmark_key]
     bench_name = bench["name"]
     category_names = bench.get("category_names", _DEFAULT_CATEGORIES)
+    judge_fn = bench.get("judge_fn", None)
 
     # Load data
     if args.data_file:
@@ -239,7 +266,9 @@ def main() -> None:
 
             try:
                 results = run_fn(
-                    conv, llm_model, run_judge, category_names=category_names
+                    conv, llm_model, run_judge,
+                    category_names=category_names,
+                    judge_fn=judge_fn,
                 )
                 all_results.extend(results)
             except Exception as err:
@@ -269,11 +298,18 @@ def main() -> None:
         print(f"\n  {sys_name} Results:")
         mean, std = summary["overall_f1_mean"], summary["overall_f1_std"]
         print(f"    Overall F1: {mean:.3f} +/- {std:.3f}")
+        if "longmemeval_accuracy" in summary:
+            print(
+                f"    LongMemEval Accuracy: "
+                f"{summary['longmemeval_accuracy']:.3f} "
+                f"(task-avg: {summary['longmemeval_task_avg_accuracy']:.3f})"
+            )
         print(f"    Questions: {summary['n_questions']}")
         for cat, cs in summary.get("by_category", {}).items():
+            acc_str = f"  Acc={cs['accuracy']:.3f}" if "accuracy" in cs else ""
             print(
-                f"    {cat:12}: F1={cs['f1_mean']:.3f} "
-                f"+/- {cs['f1_std']:.3f} (N={cs['n']})"
+                f"    {cat:28}: F1={cs['f1_mean']:.3f} "
+                f"+/- {cs['f1_std']:.3f}{acc_str} (N={cs['n']})"
             )
         print(
             f"    Tokens: {stats['total_tokens']} ({stats['calls']} calls)"
@@ -303,7 +339,7 @@ def main() -> None:
             json.dump(payload, f, indent=2)
         print(f"    Saved: {out_path}")
 
-        all_summaries[sys_name] = {
+        sys_summary = {
             "overall_f1_mean": summary["overall_f1_mean"],
             "overall_f1_std": summary["overall_f1_std"],
             "n_questions": summary["n_questions"],
@@ -312,6 +348,12 @@ def main() -> None:
             "token_usage": stats,
             "token_breakdown": model_stats,
         }
+        if "longmemeval_accuracy" in summary:
+            sys_summary["longmemeval_accuracy"] = summary["longmemeval_accuracy"]
+            sys_summary["longmemeval_task_avg_accuracy"] = summary[
+                "longmemeval_task_avg_accuracy"
+            ]
+        all_summaries[sys_name] = sys_summary
 
     # Save aggregate summary
     if all_summaries:
@@ -330,25 +372,50 @@ def main() -> None:
         print(f"\nSummary saved: {summary_path}")
 
         # Print comparison table
+        has_acc = any(
+            "longmemeval_accuracy" in s for s in all_summaries.values()
+        )
         print(f"\n{'='*70}")
         print(f"BENCHMARK SUMMARY ({bench_name}, model={llm_model})")
         print(f"{'='*70}")
-        print(
-            f"  {'System':14} {'F1 Mean':>8} {'F1 Std':>8} "
-            f"{'N QA':>6} {'Tokens':>10}"
-        )
-        print(f"  {'-'*14} {'-'*8} {'-'*8} {'-'*6} {'-'*10}")
+        if has_acc:
+            print(
+                f"  {'System':14} {'Accuracy':>8} {'TaskAvg':>8} "
+                f"{'F1':>8} {'N QA':>6} {'Tokens':>10}"
+            )
+            print(
+                f"  {'-'*14} {'-'*8} {'-'*8} "
+                f"{'-'*8} {'-'*6} {'-'*10}"
+            )
+            sort_key = "longmemeval_accuracy"
+        else:
+            print(
+                f"  {'System':14} {'F1 Mean':>8} {'F1 Std':>8} "
+                f"{'N QA':>6} {'Tokens':>10}"
+            )
+            print(f"  {'-'*14} {'-'*8} {'-'*8} {'-'*6} {'-'*10}")
+            sort_key = "overall_f1_mean"
         for sys_name, s in sorted(
             all_summaries.items(),
-            key=lambda x: x[1]["overall_f1_mean"],
+            key=lambda x: x[1].get(sort_key, 0),
             reverse=True,
         ):
-            print(
-                f"  {sys_name:14} {s['overall_f1_mean']:>8.3f} "
-                f"{s['overall_f1_std']:>8.3f} "
-                f"{s['n_questions']:>6} "
-                f"{s['token_usage']['total_tokens']:>10}"
-            )
+            if has_acc:
+                print(
+                    f"  {sys_name:14} "
+                    f"{s.get('longmemeval_accuracy', 0):>8.3f} "
+                    f"{s.get('longmemeval_task_avg_accuracy', 0):>8.3f} "
+                    f"{s['overall_f1_mean']:>8.3f} "
+                    f"{s['n_questions']:>6} "
+                    f"{s['token_usage']['total_tokens']:>10}"
+                )
+            else:
+                print(
+                    f"  {sys_name:14} {s['overall_f1_mean']:>8.3f} "
+                    f"{s['overall_f1_std']:>8.3f} "
+                    f"{s['n_questions']:>6} "
+                    f"{s['token_usage']['total_tokens']:>10}"
+                )
 
         # Category comparison
         all_cats = set()

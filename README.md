@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="MemEval" width="500"/>
+  <img src="assets/logo.png" alt="MemEval" width="140"/>
   <br/>
   <em>Apples-to-apples benchmark for agent memory systems</em>
   <br/><br/>
