@@ -13,54 +13,66 @@
   <img src="assets/benchmark.png" width="85%"/>
 </p>
 
-MemEval is a reproducible benchmark for agent memory systems, built on [LoCoMo](https://arxiv.org/abs/2402.17753) (1,986 QA pairs across 10 multi-session conversations). It evaluates factual recall, temporal reasoning, multi-hop inference, and adversarial resistance — with identical models, prompts, and scoring across all systems.
+MemEval is a reproducible benchmark for agent memory systems, built on [LoCoMo](https://arxiv.org/abs/2402.17753) (1,986 QA pairs across 10 multi-session conversations). It evaluates factual recall, temporal reasoning, multi-hop inference, and adversarial resistance — with identical models, prompts, and scoring across all 8 systems.
 
-We also built **PropMem**, a simple yet effective proposition-based memory that achieves the best cost/quality tradeoff. Rather than building a knowledge graph, PropMem extracts atomic facts, tags each with an entity, and filters by entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
+We also built **PropMem**, a proposition-based memory that achieves the best cost/quality tradeoff. Rather than building a knowledge graph, PropMem extracts atomic facts, tags each with an entity, and filters by entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
 
 ---
 
 ## Results
 
-All results with **gpt-4.1-mini**, **text-embedding-3-small**, token-level F1 scoring. Token counts include both ingestion and query — tracked via monkey-patching the OpenAI SDK (chat completions + responses API).*
+All 8 systems evaluated on the same 10 LoCoMo conversations (1,986 QA pairs) with **gpt-4.1-mini** and **text-embedding-3-small**. Judge scores from **gpt-5.2** (3 binary dimensions: relevance, completeness, accuracy). Token counts track LLM calls only (chat completions + responses API); embedding calls are excluded.\*
 
-| System | Overall | Factual | Temporal | Multi-hop | Adversarial | Tokens |
-|--------|---------|---------|----------|-----------|-------------|--------|
-| **PropMem** | **0.556 ± 0.037** | 0.379 | 0.506 | 0.540 | **0.812** | **5.3M** |
-| Full Context | 0.545 ± 0.036 | **0.517** | 0.380 | **0.675** | 0.504 | 37.5M |
-| SimpleMem | 0.470 ± 0.043 | 0.393 | **0.583** | 0.555 | 0.299 | 22.5M |
-| Graphiti | 0.415 ± 0.031 | 0.279 | 0.135 | 0.367 | **0.875** | ~3.0M** |
-| Mem0 | 0.345 ± 0.037 | 0.279 | 0.121 | 0.344 | 0.595 | 3.0M |
-| MemU | 0.310 ± 0.028 | 0.192 | 0.064 | 0.235 | 0.760 | 6.9M |
-| OpenClaw | 0.277 ± 0.028 | 0.230 | 0.069 | 0.120 | 0.790 | 16.5M |
+### Token F1
 
-*\*Token counts track LLM calls only (chat completions + responses API). Embedding API calls (text-embedding-3-small) are not included — these are cheap (~$0.02/M tokens) and used by all retrieval-based systems.*
+| Rank | System | Overall F1 | Factual | Temporal | Multi-hop | Inferential | Adversarial | Tokens |
+|:----:|--------|:----------:|:-------:|:--------:|:---------:|:-----------:|:-----------:|-------:|
+| 1 | **PropMem** | **0.561** | 0.362 | **0.585** | 0.528 | **0.234** | **0.803** | **5.9M** |
+| 2 | OpenClaw | 0.557 | **0.464** | 0.482 | **0.670** | 0.213 | 0.528 | 16.8M |
+| 3 | Full Context | 0.542 | 0.517 | 0.369 | 0.674 | 0.197 | 0.509 | 37.8M |
+| 4 | Hindsight | 0.489 | 0.431 | 0.306 | 0.526 | 0.206 | 0.647 | 24.5M |
+| 5 | Graphiti | 0.416 | 0.296 | 0.151 | 0.349 | 0.120 | 0.873 | 5.1M |
+| 6 | SimpleMem | 0.358 | 0.245 | 0.320 | 0.237 | 0.136 | 0.734 | 11.7M |
+| 7 | Mem0 | 0.344 | 0.267 | 0.104 | 0.330 | 0.174 | 0.629 | 3.3M |
+| 8 | MemU | 0.299 | 0.190 | 0.068 | 0.233 | 0.076 | 0.704 | 7.1M |
 
-*\*\*Graphiti's original reported 0.7M only tracked answer-generation calls. The corrected ~3.0M (extrapolated from 300K/conversation) includes entity extraction, edge extraction, and deduplication calls via the OpenAI Responses API.*
+### LLM Judge (gpt-5.2)
 
-**Key Advantages:**
- - **#1 Overall F1** — best cost/quality tradeoff across all 7 systems
- - **7x fewer tokens than Full Context** — propositions pre-digest information so cheap models answer correctly
+| Rank | System | Relevant | Complete | Accurate | Judge Avg | Tokens |
+|:----:|--------|:--------:|:--------:|:--------:|:---------:|-------:|
+| 1 | **PropMem** | **0.921** | **0.752** | **0.792** | **0.822** | **5.9M** |
+| 2 | OpenClaw | 0.904 | 0.595 | 0.676 | 0.725 | 16.8M |
+| 3 | Full Context | 0.919 | 0.536 | 0.672 | 0.709 | 37.8M |
+| 4 | Hindsight | 0.855 | 0.547 | 0.625 | 0.676 | 24.5M |
+| 5 | Graphiti | 0.712 | 0.459 | 0.546 | 0.573 | 5.1M |
+| 6 | Mem0 | 0.663 | 0.360 | 0.469 | 0.497 | 3.3M |
+| 7 | SimpleMem | 0.568 | 0.426 | 0.441 | 0.478 | 11.7M |
+| 8 | MemU | 0.527 | 0.297 | 0.374 | 0.399 | 7.1M |
 
-**Note on adversarial:** Adversarial questions test whether a system correctly refuses trick questions about the wrong person. Published papers ([SimpleMem](https://arxiv.org/abs/2601.02553), [Mem0](https://arxiv.org/abs/2504.19413)) typically exclude adversarial from their averages. Without adversarial, the ranking changes:
+### Judge Accuracy by Category
 
-| System | F1 (excl. adversarial) | Tokens |
-|--------|------------------------|--------|
-| Full Context | 0.556 | 37.5M |
-| SimpleMem | 0.520 | 22.5M |
-| **PropMem** | **0.482** | **5.3M** |
-| Graphiti | 0.281 | ~3.0M** |
-| Mem0 | 0.273 | 3.0M |
-| MemU | 0.180 | 6.9M |
-| OpenClaw | 0.129 | 16.5M |
+| System | Factual | Temporal | Multi-hop | Inferential | Adversarial |
+|--------|:-------:|:--------:|:---------:|:-----------:|:-----------:|
+| **PropMem** | 0.606 | **0.773** | 0.834 | **0.604** | 0.883 |
+| OpenClaw | **0.631** | 0.449 | 0.834 | 0.458 | 0.619 |
+| Full Context | 0.691 | 0.315 | **0.850** | 0.479 | 0.623 |
+| Hindsight | 0.535 | 0.442 | 0.692 | 0.438 | 0.729 |
+| Graphiti | 0.500 | 0.181 | 0.546 | 0.271 | **0.899** |
+| Mem0 | 0.472 | 0.093 | 0.492 | 0.354 | 0.717 |
+| SimpleMem | 0.305 | 0.355 | 0.347 | 0.323 | 0.789 |
+| MemU | 0.319 | 0.040 | 0.333 | 0.229 | 0.758 |
+
+*\*Embedding API calls (text-embedding-3-small) are not included — these are cheap (~$0.02/M tokens) and used by all retrieval-based systems.*
 
 ---
 
 ## Key Findings
 
-- **Full Context and SimpleMem lead on pure retrieval** (excluding adversarial). Full Context sees everything; SimpleMem's multi-round reflection is genuinely effective.
-- **PropMem is the best cost/quality tradeoff** — #3 on retrieval at 7x fewer tokens than Full Context, #1 overall when adversarial resistance matters.
-- **Adversarial resistance correlates with entity awareness**, not retrieval quality. Graphiti (0.875) and PropMem (0.812) both have entity-centric architectures. SimpleMem (0.299) has none.
-- **Raw chunks collapse with cheap models** — OpenClaw drops to 0.277 with gpt-4.1-mini. PropMem barely changes because propositions pre-digest information, so even cheap models answer correctly.
+- **PropMem is #1 on both F1 and judge** — and at 5.9M tokens, it's 6.4x cheaper than Full Context (37.8M) and 2.8x cheaper than OpenClaw (16.8M).
+- **F1 understates PropMem's lead.** F1 shows a near-tie with OpenClaw (0.561 vs 0.557), but judge completeness (0.752 vs 0.595) and accuracy (0.792 vs 0.676) reveal a clear gap — PropMem gives more complete, correct answers.
+- **PropMem dominates temporal reasoning.** Judge accuracy 0.773, nearly double the next best (OpenClaw 0.449). Absolute date extraction during ingestion means the model doesn't need to resolve "last week" at query time.
+- **Adversarial resistance correlates with entity awareness.** Graphiti (0.899) and PropMem (0.883) both have entity-centric architectures. Systems without entity filtering (SimpleMem 0.789, MemU 0.758) are worse, and chunk-based systems (OpenClaw 0.619, Full Context 0.623) struggle most.
+- **Propositions pre-digest information for cheap models.** Full Context sends raw conversations to gpt-4.1-mini and still scores well on F1 — but at 37.8M tokens. PropMem extracts atomic facts once, so even cheap models answer correctly from pre-processed evidence.
 
 ---
 
@@ -103,8 +115,9 @@ Real outputs from the LoCoMo benchmark (gpt-4.1-mini, conv-26):
 |--------|-------------|-----------|
 | **PropMem** | Entity-filtered propositions ([design](PROPMEM.md)) | Entity-scoped proposition search + CoT reasoning |
 | **OpenClaw** | Chunk-and-search | Hybrid BM25 + vector search, top-K chunks to LLM |
-| **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **Full Context** | Brute force | Entire conversation in the prompt |
+| **Hindsight** | Chunk + hierarchical summary | Summaries for routing, chunks for answering |
+| **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **SimpleMem** | Raw text + planning | Multi-round reflection (5+ LLM calls/question) |
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
 | **MemU** | Summary extraction | Vector search with intention routing |
@@ -220,10 +233,10 @@ QA categories: 1=Factual, 2=Temporal, 3=Inferential, 4=Multi-hop, 5=Adversarial 
 
 ## Fairness Notes
 
-- **Graphiti** uses the open-source `graphiti-core` library with Kuzu (embedded graph DB), not the commercial Zep platform which uses Neo4j + BGE-m3 reranking. Zep's published numbers (75-80% accuracy) use a different metric (LLM-judge accuracy, not token F1) and their commercial infrastructure. The Mem0 paper independently measured Zep's platform at token F1 ~0.35-0.50 per category — our 0.415 with the open-source library is in the same range.
-- **Mem0** has a known timestamp bug ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) where the platform uses current system date instead of conversation timestamps, degrading temporal reasoning. Our Mem0 temporal F1 (0.121) is far below the paper's (0.489). This likely depresses our Mem0 overall F1.
+- **Graphiti** uses the open-source `graphiti-core` library with Kuzu (embedded graph DB), not the commercial Zep platform which uses Neo4j + BGE-m3 reranking. Zep's published numbers (75-80% accuracy) use a different metric (LLM-judge accuracy, not token F1) and their commercial infrastructure. The Mem0 paper independently measured Zep's platform at token F1 ~0.35-0.50 per category — our 0.416 with the open-source library is in the same range.
+- **Mem0** has a known timestamp bug ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) where the platform uses current system date instead of conversation timestamps, degrading temporal reasoning. Our Mem0 temporal F1 (0.104) is far below the paper's (0.489). This likely depresses our Mem0 overall F1.
 - **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy — a fundamentally different metric from token F1. Not directly comparable.
-- **SimpleMem** results are close to the paper's: our 4-category average is 45.8 vs paper's 43.2 (temporal matches exactly at 58.3 vs 58.6).
+- **Hindsight** uses hierarchical summarization (conversation summaries + chunk retrieval). It's the only system that builds both summaries and chunks, explaining the high token count (24.5M).
 
 ---
 
@@ -240,5 +253,6 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 - **Mem0**: [Mem0](https://arxiv.org/abs/2504.19413) — Fact extraction + vector search memory
 - **SimpleMem**: [SimpleMem](https://arxiv.org/abs/2601.02553) — Multi-round reflection memory system
 - **Graphiti**: [Graphiti](https://github.com/getzep/graphiti) — Temporal knowledge graph by Zep AI
+- **Hindsight**: [Hindsight](https://arxiv.org/abs/2503.02972) — Hierarchical summarization memory
 - **OpenClaw**: [OpenClaw](https://docs.openclaw.ai/concepts/memory) — OpenClaw memory system
 - **MemU**: [MemU](https://github.com/NevaMind-AI/memU) — Summary-based memory with intention routing
