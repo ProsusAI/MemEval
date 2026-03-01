@@ -11,9 +11,11 @@ import json
 import os
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 from openai import OpenAI
 
 from agents_memory.locomo import extract_dialogues, format_as_markdown
@@ -58,7 +60,10 @@ Rules:
 - Each fact must be a COMPLETE sentence starting with the entity name
 - Include ALL facts, even minor ones
 - Resolve pronouns to actual names
-- Include temporal context ("last week", "in 2016", "recently", etc.)
+- Convert ALL relative dates to ABSOLUTE dates using the session date. \
+Examples: "last week" in a session dated 2023-05-15 → "the week of May 8, 2023"; \
+"three months ago" → "approximately February 2023"; "yesterday" → "May 14, 2023"; \
+"next Tuesday" → "May 23, 2023". Always include the computed absolute date in the fact.
 - Preserve exact technical values (numbers, codes, formulas, URLs) verbatim
 - Be specific and factual, not interpretive
 - One atomic fact per entry — do NOT combine multiple facts"""
@@ -122,6 +127,60 @@ personality, and life circumstances
 Return JSON: {{"reasoning": "step by step inference from known facts", \
 "answer": "direct answer, no filler"}}"""
 
+# --- Single-user variants (user-assistant conversations like LongMemEval) ---
+
+ANSWER_PROMPT_SINGLE_USER = """\
+Answer the question using ONLY the evidence below. The evidence comes from \
+a conversation between a user and an AI assistant.
+
+{entity_section}
+
+{chunks_section}
+
+Question: {question}
+
+Rules:
+1. Reason step by step from the evidence
+2. The question is about the USER's information — preferences, experiences, \
+facts shared during conversation. The assistant's responses provide context.
+3. Answer if the fact is stated or clearly implied in the evidence
+4. Answer concisely but completely. Copy exact words from the evidence \
+where possible. Use commas to separate multiple items.
+5. For dates, resolve relative references to absolute dates using timestamps
+6. Answer in the SAME LANGUAGE as the question
+7. If the answer cannot be found in the evidence, say "None"
+
+Return JSON: {{"reasoning": "brief thought process", \
+"answer": "concise but complete answer"}}"""
+
+ANSWER_PROMPT_SINGLE_USER_INFERENTIAL = """\
+Answer this inference question using the evidence below. The evidence comes \
+from a conversation between a user and an AI assistant.
+
+{entity_section}
+
+{chunks_section}
+
+Question: {question}
+
+Rules:
+1. This is an INFERENCE question — reason from the user's known facts, \
+interests, personality, and circumstances
+2. Think step by step:
+   a) What relevant facts do we know about the user?
+   b) What can we logically infer from these facts?
+   c) What is the most reasonable conclusion?
+3. ALWAYS provide an answer — NEVER say "None". These questions always have \
+an answer that can be inferred from the evidence
+4. For "Would..." questions: reason from the user's stated preferences, \
+personality, and life circumstances
+5. Give a direct answer. Prefer: "Yes", "No", "Likely yes", "Likely no", \
+or a brief factual phrase with key details.
+6. Answer in the SAME LANGUAGE as the question
+
+Return JSON: {{"reasoning": "step by step inference from known facts", \
+"answer": "direct answer, no filler"}}"""
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -171,6 +230,12 @@ class PropMemSystem:
     entity_names: list[str] = field(default_factory=list)
     _embedding_cache: dict[str, list[float]] = field(default_factory=dict)
 
+    # Cluster data for topic-based retrieval (used when entity=None)
+    _cluster_centroids: Any = field(default=None, init=False, repr=False)
+    _cluster_to_indices: dict[int, list[int]] = field(
+        default_factory=dict, init=False
+    )
+
     # ------------------------------------------------------------------
     # Ingestion
     # ------------------------------------------------------------------
@@ -211,6 +276,8 @@ class PropMemSystem:
             key=lambda x: int(x.split("_")[1]),
         )
 
+        # Build extraction tasks
+        extraction_tasks = []
         for sk in session_keys:
             session_num = sk.split("_")[1]
             date_key = f"session_{session_num}_date_time"
@@ -220,10 +287,24 @@ class PropMemSystem:
             if not isinstance(turns, list) or not turns:
                 continue
 
-            props = self._extract_propositions(
-                turns, date, sk, speaker_a, speaker_b, llm_client, llm_model
-            )
-            self.propositions.extend(props)
+            extraction_tasks.append((turns, date, sk, speaker_a, speaker_b))
+
+        # Parallel proposition extraction (10 concurrent LLM calls)
+        if extraction_tasks:
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                futures = {
+                    pool.submit(
+                        self._extract_propositions,
+                        turns, date, sk, sa, sb, llm_client, llm_model,
+                    ): sk
+                    for turns, date, sk, sa, sb in extraction_tasks
+                }
+                for future in as_completed(futures):
+                    try:
+                        props = future.result()
+                        self.propositions.extend(props)
+                    except Exception as err:
+                        print(f"  Extraction error ({futures[future]}): {err}")
 
         # 3. Embed propositions
         if self.propositions:
@@ -231,10 +312,16 @@ class PropMemSystem:
                 [p.text for p in self.propositions], model=self.embedding_model
             )
 
+        # 4. Build clusters for topic-based retrieval (fallback when entity=None)
+        n_clusters = 0
+        if self.proposition_embeddings:
+            n_clusters = self._cluster_propositions()
+
         return {
             "num_turns": len(dialogues),
             "num_chunks": len(self.chunks),
             "num_propositions": len(self.propositions),
+            "num_clusters": n_clusters,
             "entities": self.entity_names,
         }
 
@@ -394,6 +481,103 @@ class PropMemSystem:
         self._embedding_cache[text] = emb
         return emb
 
+    # ------------------------------------------------------------------
+    # Embedding clusters (topic-based retrieval for entity=None)
+    # ------------------------------------------------------------------
+
+    def _cluster_propositions(self) -> int:
+        """K-means cluster proposition embeddings for topic-based retrieval.
+
+        Used when entity matching fails (single-user conversations).
+        Clusters serve as implicit topics — no extra LLM calls or embeddings.
+
+        Returns number of clusters created.
+        """
+        n = len(self.proposition_embeddings)
+        if n < 10:
+            return 0
+
+        embeddings = np.array(self.proposition_embeddings, dtype=np.float32)
+
+        # Number of clusters: sqrt(n), capped at [5, 40]
+        k = min(max(5, int(n**0.5)), 40)
+
+        # K-means++ initialization (deterministic seed)
+        rng = np.random.default_rng(42)
+        centroid_indices = [rng.integers(n)]
+        for _ in range(1, k):
+            dists = np.min(
+                np.stack(
+                    [
+                        np.sum((embeddings - embeddings[ci]) ** 2, axis=1)
+                        for ci in centroid_indices
+                    ]
+                ),
+                axis=0,
+            )
+            probs = dists / (dists.sum() + 1e-10)
+            centroid_indices.append(int(rng.choice(n, p=probs)))
+        centroids = embeddings[centroid_indices].copy()
+
+        # K-means iterations
+        for _ in range(30):
+            # Squared distances: ||X - C||^2 via expansion
+            # dists[i,j] = ||C[i]||^2 - 2*C[i]·X[j] + ||X[j]||^2
+            c_sq = np.sum(centroids**2, axis=1, keepdims=True)
+            x_sq = np.sum(embeddings**2, axis=1, keepdims=True).T
+            dists = c_sq - 2.0 * (centroids @ embeddings.T) + x_sq
+            assignments = np.argmin(dists, axis=0)
+
+            new_centroids = np.zeros_like(centroids)
+            for i in range(k):
+                mask = assignments == i
+                if np.any(mask):
+                    new_centroids[i] = embeddings[mask].mean(axis=0)
+                else:
+                    new_centroids[i] = centroids[i]
+
+            if np.allclose(centroids, new_centroids, atol=1e-6):
+                break
+            centroids = new_centroids
+
+        self._cluster_centroids = centroids
+        self._cluster_to_indices = {}
+        for i, c in enumerate(assignments.tolist()):
+            self._cluster_to_indices.setdefault(c, []).append(i)
+
+        return k
+
+    def _get_cluster_indices(
+        self, query_embedding: list[float], top_clusters: int = 5
+    ) -> list[int]:
+        """Return proposition indices from the most relevant clusters.
+
+        Cosine similarity between query and cluster centroids determines
+        which clusters are relevant — no LLM call needed.
+        """
+        if self._cluster_centroids is None:
+            return list(range(len(self.propositions)))
+
+        query = np.array(query_embedding, dtype=np.float32)
+        centroids = self._cluster_centroids
+
+        # Cosine similarity against centroids
+        c_norms = np.linalg.norm(centroids, axis=1)
+        q_norm = np.linalg.norm(query)
+        sims = (centroids @ query) / (c_norms * q_norm + 1e-10)
+
+        top_k = min(top_clusters, len(centroids))
+        top_ids = np.argsort(sims)[-top_k:][::-1]
+
+        indices = []
+        for cid in top_ids:
+            indices.extend(self._cluster_to_indices.get(int(cid), []))
+        return indices
+
+    # ------------------------------------------------------------------
+    # Proposition retrieval (vector + BM25, entity/cluster-filtered)
+    # ------------------------------------------------------------------
+
     def _retrieve_propositions(
         self,
         question: str,
@@ -413,7 +597,16 @@ class PropMemSystem:
             ]
             # Use entity-specific results even if few — don't pollute with other entities
         else:
-            indices = list(range(len(self.propositions)))
+            # For large proposition sets, cluster filtering narrows to relevant
+            # topics. For small sets (< 500), direct vector+BM25 search is
+            # effective enough and cluster pre-filtering risks excluding
+            # relevant propositions.
+            n_props = len(self.propositions)
+            if n_props >= 500 and self._cluster_centroids is not None:
+                query_emb = self._embed_query(question)
+                indices = self._get_cluster_indices(query_emb, top_clusters=5)
+            else:
+                indices = list(range(n_props))
 
         # Vector search
         query_emb = self._embed_query(question)
@@ -531,6 +724,7 @@ class PropMemSystem:
         client: OpenAI,
         model: str,
         is_inferential: bool = False,
+        single_user: bool = False,
     ) -> str:
         """Generate answer using CoT over propositions + chunks."""
         # Build entity section
@@ -542,8 +736,8 @@ class PropMemSystem:
         elif propositions:
             prop_lines = []
             for p, _score in propositions:
-                prop_lines.append(f"- [{p.entity}] {p.text}")
-            entity_section = "Known facts:\n" + "\n".join(prop_lines)
+                prop_lines.append(f"- [{p.date}] {p.text}")
+            entity_section = "Known facts from conversation:\n" + "\n".join(prop_lines)
         else:
             entity_section = "Known facts: (none extracted)"
 
@@ -554,15 +748,29 @@ class PropMemSystem:
         else:
             chunks_section = ""
 
-        entity_name = entity if entity else "the person asked about"
-
-        prompt_template = ANSWER_PROMPT_INFERENTIAL if is_inferential else ANSWER_PROMPT
-        prompt = prompt_template.format(
-            entity_section=entity_section,
-            chunks_section=chunks_section,
-            question=question,
-            entity_name=entity_name,
-        )
+        # Select prompt based on conversation type
+        if single_user:
+            prompt_template = (
+                ANSWER_PROMPT_SINGLE_USER_INFERENTIAL
+                if is_inferential
+                else ANSWER_PROMPT_SINGLE_USER
+            )
+            prompt = prompt_template.format(
+                entity_section=entity_section,
+                chunks_section=chunks_section,
+                question=question,
+            )
+        else:
+            entity_name = entity if entity else "the person asked about"
+            prompt_template = (
+                ANSWER_PROMPT_INFERENTIAL if is_inferential else ANSWER_PROMPT
+            )
+            prompt = prompt_template.format(
+                entity_section=entity_section,
+                chunks_section=chunks_section,
+                question=question,
+                entity_name=entity_name,
+            )
 
         try:
             response = client.chat.completions.create(
@@ -610,16 +818,20 @@ class PropMemSystem:
         if not llm_model:
             llm_model = os.environ.get("LLM_MODEL", "gpt-4.1")
 
-        # Step 1: Identify entity
+        # Step 1: Identify entity and conversation type
         entity = self._identify_entity(question)
+        _generic = {"user", "assistant", "system", "bot", "ai"}
+        single_user = all(n.lower() in _generic for n in self.entity_names)
 
         # Step 2: Retrieve entity-filtered propositions
         props = self._retrieve_propositions(
             question, entity=entity, top_k=self.top_k_props
         )
 
-        # Step 3: Retrieve raw chunks (broader context for temporal/multi-hop)
-        chunks = self._retrieve_chunks(question, top_k=self.top_k_chunks, entity=entity)
+        # Step 3: Retrieve raw chunks (more chunks for single-user since
+        # entity filtering doesn't apply and chunks provide broader context)
+        chunk_k = self.top_k_chunks * 2 if single_user else self.top_k_chunks
+        chunks = self._retrieve_chunks(question, top_k=chunk_k, entity=entity)
 
         # Step 4: Generate answer (route to inferential prompt if needed)
         inferential = self._is_inferential(question)
@@ -631,6 +843,7 @@ class PropMemSystem:
             llm_client,
             llm_model,
             is_inferential=inferential,
+            single_user=single_user,
         )
 
         # Clean common prefixes

@@ -22,7 +22,8 @@ def run(
     ingest = system.ingest_conversation(conv, client, llm_model)
     print(
         f"    Ingested: chunks={ingest['num_chunks']}, "
-        f"propositions={ingest['num_propositions']}"
+        f"propositions={ingest['num_propositions']}, "
+        f"clusters={ingest.get('num_clusters', 0)}"
     )
 
     return _qa_results(
