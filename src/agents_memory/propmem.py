@@ -25,6 +25,7 @@ from agents_memory.openclaw import (
     cosine_similarity,
     embed_texts,
     hybrid_search,
+    vector_search,
 )
 
 # ---------------------------------------------------------------------------
@@ -181,6 +182,49 @@ or a brief factual phrase with key details.
 Return JSON: {{"reasoning": "step by step inference from known facts", \
 "answer": "direct answer, no filler"}}"""
 
+# --- v4: unified question classifier ---
+
+CLASSIFY_PROMPT = """\
+Given this question and the known entities, classify it.
+
+Entities: {entities}
+Question: {question}
+
+Return JSON:
+{{"entity": "<exact name from list or null>", "is_inferential": true/false, \
+"is_temporal": true/false}}
+
+Rules:
+- entity: Match pronouns/aliases to entity names. null if unclear.
+- is_inferential: Requires reasoning, not direct fact recall \
+(would/could/likely/prefer)
+- is_temporal: Involves time ordering, recency, dates \
+(before/after/when/first/last/latest)"""
+
+# --- v4: unified answer prompt ---
+
+ANSWER_PROMPT_V4 = """\
+Answer the question using ONLY the evidence below.
+
+{entity_section}
+
+{chunks_section}
+
+Question: {question}
+{classification_info}
+
+Rules:
+1. Reason step by step from the evidence
+2. {entity_constraint}
+3. {answer_style}
+4. Answer must be a DIRECT listing of facts — NO full sentences, NO "The user...", \
+NO explanations. Use commas to separate multiple items. Copy exact words from evidence.
+5. Resolve relative dates to absolute dates using timestamps
+6. Answer in the SAME LANGUAGE as the question
+{none_rule}
+
+Return JSON: {{"reasoning": "...", "answer": "..."}}"""
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -195,6 +239,49 @@ class Proposition:
     entity: str
     date: str
     session_id: str
+    date_ordinal: int = 0  # days since epoch, for temporal boosting
+
+
+def _parse_date_ordinal(date_str: str) -> int:
+    """Parse a date string to an ordinal (days since epoch) for temporal ranking.
+
+    Tries common formats, falls back to regex extraction. Returns 0 on failure.
+    """
+    if not date_str:
+        return 0
+    from datetime import datetime
+
+    # Common formats from LoCoMo / LongMemEval
+    for fmt in (
+        "%B %d, %Y",       # "January 15, 2023"
+        "%b %d, %Y",       # "Jan 15, 2023"
+        "%Y-%m-%d",         # "2023-01-15"
+        "%m/%d/%Y",         # "01/15/2023"
+        "%d %B %Y",         # "15 January 2023"
+        "%B %Y",            # "January 2023"
+    ):
+        try:
+            return datetime.strptime(date_str.strip(), fmt).toordinal()
+        except ValueError:
+            continue
+
+    # Regex fallback: extract year-month-day components
+    m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", date_str)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).toordinal()
+        except ValueError:
+            pass
+
+    # Year-month only
+    m = re.search(r"(\d{4})[/-](\d{1,2})", date_str)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), 1).toordinal()
+        except ValueError:
+            pass
+
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +308,18 @@ class PropMemSystem:
     embedding_model: str = "text-embedding-3-small"
     top_k_props: int = 30
     top_k_chunks: int = 3
+
+    # Ablation flags (all True = v3 behaviour)
+    use_propositions: bool = True
+    use_chunks: bool = True
+    use_entity_filter: bool = True
+    use_clustering: bool = True
+    use_bm25: bool = True
+
+    # v4 feature flags (all False = v3 behaviour)
+    use_llm_classifier: bool = False
+    use_temporal_boost: bool = False
+    use_knowledge_updates: bool = False
 
     # Storage — populated during ingestion
     propositions: list[Proposition] = field(default_factory=list)
@@ -260,61 +359,68 @@ class PropMemSystem:
         # 1. Raw chunks (OpenClaw) for fallback
         dialogues = extract_dialogues(conv)
         markdown = format_as_markdown(dialogues)
-        self.chunks = chunk_markdown(markdown, tokens=400, overlap=80)
-        if self.chunks:
-            self.chunk_embeddings = embed_texts(
-                [c.text for c in self.chunks], model=self.embedding_model
-            )
+        if self.use_chunks:
+            self.chunks = chunk_markdown(markdown, tokens=400, overlap=80)
+            if self.chunks:
+                self.chunk_embeddings = embed_texts(
+                    [c.text for c in self.chunks], model=self.embedding_model
+                )
 
         # 2. Extract propositions per session
-        session_keys = sorted(
-            [
-                k
-                for k in conversation.keys()
-                if k.startswith("session_") and not k.endswith("_date_time")
-            ],
-            key=lambda x: int(x.split("_")[1]),
-        )
-
-        # Build extraction tasks
-        extraction_tasks = []
-        for sk in session_keys:
-            session_num = sk.split("_")[1]
-            date_key = f"session_{session_num}_date_time"
-            date = conversation.get(date_key, "")
-            turns = conversation[sk]
-
-            if not isinstance(turns, list) or not turns:
-                continue
-
-            extraction_tasks.append((turns, date, sk, speaker_a, speaker_b))
-
-        # Parallel proposition extraction (10 concurrent LLM calls)
-        if extraction_tasks:
-            with ThreadPoolExecutor(max_workers=10) as pool:
-                futures = {
-                    pool.submit(
-                        self._extract_propositions,
-                        turns, date, sk, sa, sb, llm_client, llm_model,
-                    ): sk
-                    for turns, date, sk, sa, sb in extraction_tasks
-                }
-                for future in as_completed(futures):
-                    try:
-                        props = future.result()
-                        self.propositions.extend(props)
-                    except Exception as err:
-                        print(f"  Extraction error ({futures[future]}): {err}")
-
-        # 3. Embed propositions
-        if self.propositions:
-            self.proposition_embeddings = embed_texts(
-                [p.text for p in self.propositions], model=self.embedding_model
+        if self.use_propositions:
+            session_keys = sorted(
+                [
+                    k
+                    for k in conversation.keys()
+                    if k.startswith("session_") and not k.endswith("_date_time")
+                ],
+                key=lambda x: int(x.split("_")[1]),
             )
+
+            # Build extraction tasks
+            extraction_tasks = []
+            for sk in session_keys:
+                session_num = sk.split("_")[1]
+                date_key = f"session_{session_num}_date_time"
+                date = conversation.get(date_key, "")
+                turns = conversation[sk]
+
+                if not isinstance(turns, list) or not turns:
+                    continue
+
+                extraction_tasks.append((turns, date, sk, speaker_a, speaker_b))
+
+            # Parallel proposition extraction (10 concurrent LLM calls)
+            if extraction_tasks:
+                with ThreadPoolExecutor(max_workers=10) as pool:
+                    futures = {
+                        pool.submit(
+                            self._extract_propositions,
+                            turns, date, sk, sa, sb, llm_client, llm_model,
+                        ): sk
+                        for turns, date, sk, sa, sb in extraction_tasks
+                    }
+                    for future in as_completed(futures):
+                        try:
+                            props = future.result()
+                            self.propositions.extend(props)
+                        except Exception as err:
+                            print(f"  Extraction error ({futures[future]}): {err}")
+
+            # 3. Embed propositions
+            if self.propositions:
+                self.proposition_embeddings = embed_texts(
+                    [p.text for p in self.propositions], model=self.embedding_model
+                )
+
+                # Parse date ordinals for temporal boosting
+                if self.use_temporal_boost:
+                    for p in self.propositions:
+                        p.date_ordinal = _parse_date_ordinal(p.date)
 
         # 4. Build clusters for topic-based retrieval (fallback when entity=None)
         n_clusters = 0
-        if self.proposition_embeddings:
+        if self.use_clustering and self.proposition_embeddings:
             n_clusters = self._cluster_propositions()
 
         return {
@@ -583,13 +689,14 @@ class PropMemSystem:
         question: str,
         entity: str | None = None,
         top_k: int = 30,
+        is_temporal: bool = False,
     ) -> list[tuple[Proposition, float]]:
         """Hybrid vector + BM25 search over propositions, optionally entity-filtered."""
         if not self.propositions or not self.proposition_embeddings:
             return []
 
         # Determine which propositions to search
-        if entity:
+        if entity and self.use_entity_filter:
             indices = [
                 i
                 for i, p in enumerate(self.propositions)
@@ -602,7 +709,11 @@ class PropMemSystem:
             # effective enough and cluster pre-filtering risks excluding
             # relevant propositions.
             n_props = len(self.propositions)
-            if n_props >= 500 and self._cluster_centroids is not None:
+            if (
+                self.use_clustering
+                and n_props >= 500
+                and self._cluster_centroids is not None
+            ):
                 query_emb = self._embed_query(question)
                 indices = self._get_cluster_indices(query_emb, top_clusters=5)
             else:
@@ -615,16 +726,28 @@ class PropMemSystem:
             score = cosine_similarity(query_emb, self.proposition_embeddings[idx])
             vec_scores[idx] = score
 
-        # BM25 search over propositions
-        bm25_scores = self._bm25_propositions(question, indices)
+        # Merge with BM25 if enabled
+        if self.use_bm25:
+            bm25_scores = self._bm25_propositions(question, indices)
+            # 0.8 vector, 0.2 BM25 — propositions are ~25 words,
+            # too short for BM25 to be highly discriminative
+            merged: dict[int, float] = {}
+            for idx in indices:
+                vs = vec_scores.get(idx, 0.0)
+                bs = bm25_scores.get(idx, 0.0)
+                merged[idx] = 0.8 * vs + 0.2 * bs
+        else:
+            merged = vec_scores
 
-        # Merge scores (0.8 vector, 0.2 BM25 — propositions are ~25 words,
-        # too short for BM25 to be highly discriminative)
-        merged: dict[int, float] = {}
-        for idx in indices:
-            vs = vec_scores.get(idx, 0.0)
-            bs = bm25_scores.get(idx, 0.0)
-            merged[idx] = 0.8 * vs + 0.2 * bs
+        # Temporal boosting: blend relevance with recency for time-sensitive queries
+        if self.use_temporal_boost and is_temporal:
+            max_ord = max(
+                (self.propositions[i].date_ordinal for i in indices), default=0
+            )
+            if max_ord > 0:
+                for idx in merged:
+                    recency = self.propositions[idx].date_ordinal / max_ord
+                    merged[idx] = 0.85 * merged[idx] + 0.15 * recency
 
         # Sort, deduplicate by normalized text, and return top-k
         ranked = sorted(merged.items(), key=lambda x: x[1], reverse=True)
@@ -692,19 +815,27 @@ class PropMemSystem:
     def _retrieve_chunks(
         self, question: str, top_k: int = 10, entity: str | None = None
     ) -> list[tuple[MemoryChunk, float]]:
-        """Hybrid BM25+vector search over raw chunks."""
+        """Hybrid BM25+vector or vector-only search over raw chunks."""
         if not self.chunks or not self.chunk_embeddings:
             return []
         query_emb = self._embed_query(question)
-        results = hybrid_search(
-            query=question,
-            chunks=self.chunks,
-            chunk_embeddings=self.chunk_embeddings,
-            query_embedding=query_emb,
-            top_k=top_k,
-            vector_weight=0.7,
-            text_weight=0.3,
-        )
+        if self.use_bm25:
+            results = hybrid_search(
+                query=question,
+                chunks=self.chunks,
+                chunk_embeddings=self.chunk_embeddings,
+                query_embedding=query_emb,
+                top_k=top_k,
+                vector_weight=0.7,
+                text_weight=0.3,
+            )
+        else:
+            vec_results = vector_search(
+                query_emb, self.chunk_embeddings, top_k
+            )
+            results = [
+                (self.chunks[idx], score) for idx, score in vec_results
+            ]
         if entity:
             filtered = [(c, s) for c, s in results if entity.lower() in c.text.lower()]
             if filtered:
@@ -788,6 +919,204 @@ class PropMemSystem:
             return ""
 
     # ------------------------------------------------------------------
+    # v4: unified question classifier
+    # ------------------------------------------------------------------
+
+    def _classify_question(
+        self,
+        question: str,
+        client: OpenAI,
+        model: str,
+    ) -> dict:
+        """Classify question via LLM: entity, is_inferential, is_temporal.
+
+        Falls back to v3 heuristics on error.
+        """
+        entities_str = ", ".join(self.entity_names) if self.entity_names else "unknown"
+        prompt = CLASSIFY_PROMPT.format(entities=entities_str, question=question)
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=80,
+                temperature=0,
+            )
+            content = response.choices[0].message.content or ""
+            result = json.loads(content)
+
+            # Validate entity against known names
+            raw_entity = result.get("entity")
+            entity = None
+            if raw_entity and isinstance(raw_entity, str):
+                for name in self.entity_names:
+                    if name.lower() == raw_entity.lower():
+                        entity = name
+                        break
+
+            return {
+                "entity": entity,
+                "is_inferential": bool(result.get("is_inferential", False)),
+                "is_temporal": bool(result.get("is_temporal", False)),
+            }
+        except Exception as err:
+            print(f"  Classifier error (falling back to heuristics): {err}")
+            return {
+                "entity": self._identify_entity(question),
+                "is_inferential": self._is_inferential(question),
+                "is_temporal": False,
+            }
+
+    # ------------------------------------------------------------------
+    # v4: knowledge update handling (contradiction detection)
+    # ------------------------------------------------------------------
+
+    def _apply_knowledge_updates(
+        self,
+        props: list[tuple[Proposition, float]],
+    ) -> list[tuple[Proposition, float]]:
+        """Penalize older propositions contradicted by newer same-entity props.
+
+        For same-entity propositions with cosine similarity >0.85 (same topic),
+        the older one gets a 30% score penalty. O(n^2) only within top-k
+        retrieved props (30 items max = 450 dot products).
+        """
+        if len(props) < 2:
+            return props
+
+        # Build local embeddings for the retrieved props
+        texts = [p.text for p, _ in props]
+        embs = embed_texts(texts, model=self.embedding_model)
+
+        penalties: dict[int, float] = {}
+        for i in range(len(props)):
+            for j in range(i + 1, len(props)):
+                pi, si = props[i]
+                pj, sj = props[j]
+                if pi.entity.lower() != pj.entity.lower():
+                    continue
+                sim = cosine_similarity(embs[i], embs[j])
+                if sim > 0.85:
+                    # Penalize the older one
+                    if pi.date_ordinal < pj.date_ordinal:
+                        penalties[i] = penalties.get(i, 0) + 0.30
+                    elif pj.date_ordinal < pi.date_ordinal:
+                        penalties[j] = penalties.get(j, 0) + 0.30
+
+        if not penalties:
+            return props
+
+        result = []
+        for idx, (p, score) in enumerate(props):
+            penalty = min(penalties.get(idx, 0), 0.60)  # cap total penalty
+            result.append((p, score * (1.0 - penalty)))
+        result.sort(key=lambda x: x[1], reverse=True)
+        return result
+
+    # ------------------------------------------------------------------
+    # v4: unified answer generation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _generate_answer_v4(
+        question: str,
+        propositions: list[tuple[Proposition, float]],
+        chunks: list[tuple[MemoryChunk, float]],
+        entity: str | None,
+        client: OpenAI,
+        model: str,
+        is_inferential: bool = False,
+        is_temporal: bool = False,
+        single_user: bool = False,
+    ) -> str:
+        """Generate answer using the unified v4 prompt template."""
+        # Build entity section
+        if entity and propositions:
+            prop_lines = [f"- [{p.date}] {p.text}" for p, _ in propositions]
+            entity_section = f"Known facts about {entity}:\n" + "\n".join(prop_lines)
+        elif propositions:
+            prop_lines = [f"- [{p.date}] {p.text}" for p, _ in propositions]
+            entity_section = "Known facts from conversation:\n" + "\n".join(prop_lines)
+        else:
+            entity_section = "Known facts: (none extracted)"
+
+        # Build chunk section
+        if chunks:
+            chunk_text = "\n---\n".join(c.text for c, _ in chunks)
+            chunks_section = f"Additional conversation context:\n{chunk_text}"
+        else:
+            chunks_section = ""
+
+        # Dynamic sections based on classification
+        if entity and not single_user:
+            entity_constraint = (
+                f"ONLY use facts about {entity}. Do NOT attribute another "
+                f"person's experiences to {entity}."
+            )
+        elif single_user:
+            entity_constraint = (
+                "The question is about the USER's information. "
+                "The assistant's responses provide context."
+            )
+        else:
+            entity_constraint = "Use facts about the person asked about."
+
+        if is_inferential:
+            answer_style = (
+                "This is an INFERENCE question — reason from known facts, "
+                "interests, personality, and circumstances. "
+                "For 'Would...' questions: reason from stated preferences. "
+                "Give a direct answer: 'Yes', 'No', 'Likely yes', 'Likely no', "
+                "or a brief factual phrase."
+            )
+            none_rule = (
+                "7. ALWAYS provide an answer — NEVER say 'None'. "
+                "These questions always have an answer that can be inferred."
+            )
+        else:
+            answer_style = (
+                "ONLY answer if the specific fact is DIRECTLY stated in evidence. "
+                "Do NOT guess or construct answers from vague evidence."
+            )
+            none_rule = (
+                "7. If the answer is not clearly stated in the evidence, "
+                "say 'None'"
+            )
+
+        classification_info = ""
+        if is_temporal:
+            classification_info = (
+                "Note: This is a TEMPORAL question. "
+                "Pay attention to dates and time ordering."
+            )
+
+        prompt = ANSWER_PROMPT_V4.format(
+            entity_section=entity_section,
+            chunks_section=chunks_section,
+            question=question,
+            classification_info=classification_info,
+            entity_constraint=entity_constraint,
+            answer_style=answer_style,
+            none_rule=none_rule,
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=500,
+                temperature=0.1,
+            )
+            content = response.choices[0].message.content or ""
+            result = json.loads(content)
+            return result.get("answer", "").strip()
+        except (json.JSONDecodeError, Exception) as err:
+            print(f"  Answer v4 error: {err}")
+            return ""
+
+    # ------------------------------------------------------------------
     # Main pipeline
     # ------------------------------------------------------------------
 
@@ -800,7 +1129,7 @@ class PropMemSystem:
         """Answer with entity-centric proposition retrieval + CoT.
 
         Pipeline:
-          1. Identify target entity (string matching)
+          1. Identify target entity (string matching or LLM classifier)
           2. Retrieve entity-filtered propositions
           3. Retrieve raw chunks (broader context)
           4. CoT answer with structured evidence
@@ -818,33 +1147,74 @@ class PropMemSystem:
         if not llm_model:
             llm_model = os.environ.get("LLM_MODEL", "gpt-4.1")
 
-        # Step 1: Identify entity and conversation type
-        entity = self._identify_entity(question)
+        # Step 1: Identify entity, question type, and conversation type
         _generic = {"user", "assistant", "system", "bot", "ai"}
         single_user = all(n.lower() in _generic for n in self.entity_names)
 
+        if self.use_llm_classifier:
+            classification = self._classify_question(
+                question, llm_client, llm_model
+            )
+            entity = classification["entity"]
+            inferential = classification["is_inferential"]
+            is_temporal = classification["is_temporal"]
+        else:
+            entity = self._identify_entity(question)
+            inferential = self._is_inferential(question)
+            is_temporal = False
+
         # Step 2: Retrieve entity-filtered propositions
-        props = self._retrieve_propositions(
-            question, entity=entity, top_k=self.top_k_props
-        )
+        # Increase top_k when chunks are disabled to compensate
+        prop_k = self.top_k_props
+        if not self.use_chunks:
+            prop_k = int(prop_k * 1.5)
+
+        props = []
+        if self.use_propositions:
+            props = self._retrieve_propositions(
+                question, entity=entity, top_k=prop_k, is_temporal=is_temporal
+            )
+
+        # Knowledge update handling: penalize older contradicted propositions
+        if self.use_knowledge_updates and props and entity:
+            props = self._apply_knowledge_updates(props)
 
         # Step 3: Retrieve raw chunks (more chunks for single-user since
         # entity filtering doesn't apply and chunks provide broader context)
-        chunk_k = self.top_k_chunks * 2 if single_user else self.top_k_chunks
-        chunks = self._retrieve_chunks(question, top_k=chunk_k, entity=entity)
+        chunk_k = self.top_k_chunks
+        if single_user:
+            chunk_k *= 2
+        if not self.use_propositions:
+            chunk_k = max(chunk_k, 10)
 
-        # Step 4: Generate answer (route to inferential prompt if needed)
-        inferential = self._is_inferential(question)
-        answer = self._generate_answer(
-            question,
-            props,
-            chunks,
-            entity,
-            llm_client,
-            llm_model,
-            is_inferential=inferential,
-            single_user=single_user,
-        )
+        chunks = []
+        if self.use_chunks:
+            chunks = self._retrieve_chunks(question, top_k=chunk_k, entity=entity)
+
+        # Step 4: Generate answer (route to appropriate prompt)
+        if self.use_llm_classifier:
+            answer = self._generate_answer_v4(
+                question,
+                props,
+                chunks,
+                entity,
+                llm_client,
+                llm_model,
+                is_inferential=inferential,
+                is_temporal=is_temporal,
+                single_user=single_user,
+            )
+        else:
+            answer = self._generate_answer(
+                question,
+                props,
+                chunks,
+                entity,
+                llm_client,
+                llm_model,
+                is_inferential=inferential,
+                single_user=single_user,
+            )
 
         # Clean common prefixes
         for prefix in ("Answer:", "A:", "answer:"):
