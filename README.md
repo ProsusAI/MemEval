@@ -13,7 +13,7 @@
   <img src="assets/benchmark.png" width="85%"/>
 </p>
 
-MemEval is a reproducible benchmark for agent memory systems, built on [LoCoMo](https://arxiv.org/abs/2402.17753) (1,986 QA pairs across 10 multi-session conversations). It evaluates factual recall, temporal reasoning, multi-hop inference, and adversarial resistance — with identical models, prompts, and scoring across all 8 systems.
+MemEval is a reproducible benchmark for agent memory systems, built on [LoCoMo](https://arxiv.org/abs/2402.17753) (1,986 QA pairs across 10 multi-session conversations). It evaluates factual recall, temporal reasoning, multi-hop inference, and adversarial resistance — with identical models, prompts, and scoring across all 9 systems.
 
 We also built **PropMem**, a proposition-based memory that achieves the best cost/quality tradeoff. Rather than building a knowledge graph, PropMem extracts atomic facts, tags each with an entity, and filters by entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
 
@@ -21,7 +21,7 @@ We also built **PropMem**, a proposition-based memory that achieves the best cos
 
 ## Results
 
-All 8 systems evaluated on the same 10 LoCoMo conversations (1,986 QA pairs) with **gpt-4.1-mini** and **text-embedding-3-small**. Judge scores from **gpt-5.2** (3 binary dimensions: relevance, completeness, accuracy). Token counts track LLM calls only (chat completions + responses API); embedding calls are excluded.\*
+All 9 systems evaluated on the same 10 LoCoMo conversations (1,986 QA pairs) with **gpt-4.1-mini** and **text-embedding-3-small** (except Memory-R1 which uses a fine-tuned Qwen-2.5-7B). Judge scores from **gpt-5.2** (3 binary dimensions: relevance, completeness, accuracy). Token counts track LLM calls only (chat completions + responses API); embedding calls are excluded.\*
 
 ### Token F1
 
@@ -32,9 +32,10 @@ All 8 systems evaluated on the same 10 LoCoMo conversations (1,986 QA pairs) wit
 | 3 | Full Context | 0.542 | 0.517 | 0.369 | 0.674 | 0.197 | 0.509 | 37.8M |
 | 4 | Hindsight | 0.489 | 0.431 | 0.306 | 0.526 | 0.206 | 0.647 | 24.5M |
 | 5 | Graphiti | 0.416 | 0.296 | 0.151 | 0.349 | 0.120 | 0.873 | 5.1M |
-| 6 | SimpleMem | 0.358 | 0.245 | 0.320 | 0.237 | 0.136 | 0.734 | 11.7M |
-| 7 | Mem0 | 0.344 | 0.267 | 0.104 | 0.330 | 0.174 | 0.629 | 3.3M |
-| 8 | MemU | 0.299 | 0.190 | 0.068 | 0.233 | 0.076 | 0.704 | 7.1M |
+| 6 | Memory-R1 | 0.389 | 0.370 | 0.116 | 0.460 | 0.193 | 0.504 | 3.4M |
+| 7 | SimpleMem | 0.358 | 0.245 | 0.320 | 0.237 | 0.136 | 0.734 | 11.7M |
+| 8 | Mem0 | 0.344 | 0.267 | 0.104 | 0.330 | 0.174 | 0.629 | 3.3M |
+| 9 | MemU | 0.299 | 0.190 | 0.068 | 0.233 | 0.076 | 0.704 | 7.1M |
 
 ### LLM Judge (gpt-5.2)
 
@@ -45,9 +46,10 @@ All 8 systems evaluated on the same 10 LoCoMo conversations (1,986 QA pairs) wit
 | 3 | Full Context | 0.919 | 0.536 | 0.672 | 0.709 | 37.8M |
 | 4 | Hindsight | 0.855 | 0.547 | 0.625 | 0.676 | 24.5M |
 | 5 | Graphiti | 0.712 | 0.459 | 0.546 | 0.573 | 5.1M |
-| 6 | Mem0 | 0.663 | 0.360 | 0.469 | 0.497 | 3.3M |
-| 7 | SimpleMem | 0.568 | 0.426 | 0.441 | 0.478 | 11.7M |
-| 8 | MemU | 0.527 | 0.297 | 0.374 | 0.399 | 7.1M |
+| 6 | Memory-R1 | 0.784 | 0.403 | 0.520 | 0.569 | 3.4M |
+| 7 | Mem0 | 0.663 | 0.360 | 0.469 | 0.497 | 3.3M |
+| 8 | SimpleMem | 0.568 | 0.426 | 0.441 | 0.478 | 11.7M |
+| 9 | MemU | 0.527 | 0.297 | 0.374 | 0.399 | 7.1M |
 
 ### Judge Accuracy by Category
 
@@ -58,6 +60,7 @@ All 8 systems evaluated on the same 10 LoCoMo conversations (1,986 QA pairs) wit
 | Full Context | 0.691 | 0.315 | **0.850** | 0.479 | 0.623 |
 | Hindsight | 0.535 | 0.442 | 0.692 | 0.438 | 0.729 |
 | Graphiti | 0.500 | 0.181 | 0.546 | 0.271 | **0.899** |
+| Memory-R1 | 0.525 | 0.097 | 0.639 | 0.417 | 0.621 |
 | Mem0 | 0.472 | 0.093 | 0.492 | 0.354 | 0.717 |
 | SimpleMem | 0.305 | 0.355 | 0.347 | 0.323 | 0.789 |
 | MemU | 0.319 | 0.040 | 0.333 | 0.229 | 0.758 |
@@ -120,6 +123,7 @@ Real outputs from the LoCoMo benchmark (gpt-4.1-mini, conv-26):
 | **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **SimpleMem** | Raw text + planning | Multi-round reflection (5+ LLM calls/question) |
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
+| **Memory-R1** | Two-agent RL ([arXiv:2508.19828](https://arxiv.org/abs/2508.19828)) | SFT+GRPO fine-tuned Qwen-2.5-7B (Memory Manager + Answer Agent) |
 | **MemU** | Summary extraction | Vector search with intention routing |
 
 ---
@@ -237,6 +241,7 @@ QA categories: 1=Factual, 2=Temporal, 3=Inferential, 4=Multi-hop, 5=Adversarial 
 - **Mem0** has a known timestamp bug ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) where the platform uses current system date instead of conversation timestamps, degrading temporal reasoning. Our Mem0 temporal F1 (0.104) is far below the paper's (0.489). This likely depresses our Mem0 overall F1.
 - **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy — a fundamentally different metric from token F1. Not directly comparable.
 - **Hindsight** uses hierarchical summarization (conversation summaries + chunk retrieval). It's the only system that builds both summaries and chunks, explaining the high token count (24.5M).
+- **Memory-R1** is the only system using a fine-tuned local model (Qwen-2.5-7B) rather than API-based LLMs. The current results are from a model trained for only 100 GRPO steps — significantly undertrained relative to the paper's recommended schedule. Performance is expected to improve with longer training. Token usage (1,986 questions): 3.4M total (3.39M prompt, 10.5K completion; ~1,705 prompt and ~5.3 completion per question).
 
 ---
 
@@ -256,3 +261,4 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 - **Hindsight**: [Hindsight](https://arxiv.org/abs/2503.02972) — Hierarchical summarization memory
 - **OpenClaw**: [OpenClaw](https://docs.openclaw.ai/concepts/memory) — OpenClaw memory system
 - **MemU**: [MemU](https://github.com/NevaMind-AI/memU) — Summary-based memory with intention routing
+- **Memory-R1**: [Memory-R1](https://arxiv.org/abs/2508.19828) — Two-agent RL for memory management
