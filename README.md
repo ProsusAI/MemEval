@@ -12,24 +12,11 @@
   <img src="assets/benchmark.png" width="85%"/>
 </p>
 
-Agent memory systems are hard to compare fairly. They are typically evaluated with different
-LLMs, embedding models, and metrics.
+Agent memory systems are hard to compare fairly. They are typically evaluated with different LLMs, embedding models, and metrics. MemEval standardizes the setup: same LLM, same embeddings, same scoring pipeline, and end-to-end token cost tracking across ingestion, retrieval, and answer generation. Cost reporting matters because LLM calls often differ by an order of magnitude across architectures.
 
-MemEval standardizes the setup: same LLM, same embeddings, and the same scoring pipeline across
-systems. It also tracks end-to-end LLM token usage across ingestion, retrieval, and answer
-generation.
+Evaluation combines token F1 with LLM-as-judge scores, with per-category breakdowns to show where each system actually wins. The framework ships with 9 memory systems and 2 benchmarks ([LoCoMo](https://arxiv.org/abs/2402.17753) and [LongMemEval](https://arxiv.org/abs/2410.10813)), and adding new systems or datasets is straightforward.
 
-That cost reporting matters because LLM calls often differ by an order of magnitude across
-architectures. Evaluation combines token F1 with LLM-as-judge scores, with per-category
-breakdowns to show where each system actually wins.
-
-The framework is extensible. It currently ships with 9 memory systems and 2 benchmarks
-([LoCoMo](https://arxiv.org/abs/2402.17753) and [LongMemEval](https://arxiv.org/abs/2410.10813)),
-but adding new systems or datasets is straightforward.
-
-We also introduce **PropMem**. In our MemEval runs, PropMem provides the strongest measured
-quality-to-cost tradeoff. It extracts atomic facts, tags them by entity, and filters retrieval by
-entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
+We also introduce **PropMem**, which provides the strongest measured quality-to-cost tradeoff in our runs. It extracts atomic facts, tags them by entity, and filters retrieval by entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
 
 ## Results
 
