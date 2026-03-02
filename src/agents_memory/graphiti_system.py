@@ -121,6 +121,7 @@ class GraphitiSystem:
         llm_config = LLMConfig(
             api_key=os.environ["OPENAI_API_KEY"],
             model=self.llm_model,
+            small_model=self.llm_model,
         )
         llm_client = OpenAIClient(config=llm_config)
 

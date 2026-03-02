@@ -1,10 +1,9 @@
 <p align="center">
-  <img src="assets/logo.png" alt="MemClaw" width="500"/>
+  <img src="assets/logo.png" alt="MemEval" width="140"/>
   <br/>
-  <em>Semantic memory for agent platforms — what the agent knows about the user</em>
+  <em>Fair evaluation framework for agent memory</em>
   <br/><br/>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue"/></a>
-  <img src="https://img.shields.io/badge/python-3.13%2B-blue"/>
   <a href="https://github.com/ProsusAI/MemEval"><img src="https://img.shields.io/badge/github-ProsusAI%2FMemEval-black?logo=github"/></a>
   <a href="https://github.com/ProsusAI/MemEval/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen"/></a>
 </p>
@@ -13,148 +12,193 @@
   <img src="assets/benchmark.png" width="85%"/>
 </p>
 
-*#1 overall F1 on LoCoMo — 7x fewer tokens than full context. See [MEMCLAW.md](MEMCLAW.md) for the design.*
+Agent memory systems are hard to compare fairly. They are typically evaluated with different
+LLMs, embedding models, and metrics.
 
----
+MemEval standardizes the setup: same LLM, same embeddings, and the same scoring pipeline across
+systems. It also tracks end-to-end LLM token usage across ingestion, retrieval, and answer
+generation.
 
-## 📑 Table of Contents
+That cost reporting matters because LLM calls often differ by an order of magnitude across
+architectures. Evaluation combines token F1 with LLM-as-judge scores, with per-category
+breakdowns to show where each system actually wins.
 
-- [🌟 Results](#-results)
-- [💡 Examples](#-examples)
-- [🔬 How It Works](#-how-it-works)
-- [🚀 Quick Start](#-quick-start)
-- [🛠️ Add Your System](#️-add-your-system)
-- [⚖️ Fairness Notes](#️-fairness-notes)
-- [📝 References](#-references)
+The framework is extensible. It currently ships with 8 memory systems and 2 benchmarks
+([LoCoMo](https://arxiv.org/abs/2402.17753) and [LongMemEval](https://arxiv.org/abs/2410.10813)),
+but adding new systems or datasets is straightforward.
 
----
+We also introduce **PropMem**. In our MemEval runs, PropMem provides the strongest measured
+quality-to-cost tradeoff. It extracts atomic facts, tags them by entity, and filters retrieval by
+entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
 
-## 🌟 Results
+## Results
 
-[LoCoMo](https://arxiv.org/abs/2402.17753) evaluates long-term memory using realistic multi-session dialogues (1,986 QA pairs across 10 conversations). Categories: factual (36%), adversarial (25%), temporal (21%), multi-hop (15%), inferential (4%).
+`Tokens` = total system LLM prompt + completion tokens across ingestion, retrieval,
+and answering; excludes embedding and judge calls.
 
-All results with **gpt-4.1-mini**, **text-embedding-3-small**, token-level F1 scoring. Token counts include both ingestion and query — tracked via monkey-patching the OpenAI SDK.
+### LoCoMo
 
-| System | Overall | Factual | Temporal | Multi-hop | Adversarial | Tokens |
-|--------|---------|---------|----------|-----------|-------------|--------|
-| **MemClaw** | **0.556 ± 0.037** | 0.379 | 0.506 | 0.540 | **0.812** | **5.3M** |
-| Full Context | 0.545 ± 0.036 | **0.517** | 0.380 | **0.675** | 0.504 | 37.5M |
-| SimpleMem | 0.470 ± 0.043 | 0.393 | **0.583** | 0.555 | 0.299 | 22.5M |
-| Graphiti | 0.415 ± 0.031 | 0.279 | 0.135 | 0.367 | **0.875** | 0.7M |
-| Mem0 | 0.345 ± 0.037 | 0.279 | 0.121 | 0.344 | 0.595 | 3.0M |
-| MemU | 0.310 ± 0.028 | 0.192 | 0.064 | 0.235 | 0.760 | 6.9M |
-| OpenClaw | 0.277 ± 0.028 | 0.230 | 0.069 | 0.120 | 0.790 | 16.5M |
+8 systems, 10 conversations, 1,986 QA pairs.
 
-**Key Advantages:**
- - **#1 Overall F1** — best cost/quality tradeoff across all 7 systems
- - **7x fewer tokens than Full Context** — propositions pre-digest information so cheap models answer correctly
+Overall metrics:
 
-**Note on adversarial:** Adversarial questions test whether a system correctly refuses trick questions about the wrong person. Published papers ([SimpleMem](https://arxiv.org/abs/2601.02553), [Mem0](https://arxiv.org/abs/2504.19413)) typically exclude adversarial from their averages. Without adversarial, the ranking changes:
+<div align="center">
 
-| System | F1 (excl. adversarial) | Tokens |
-|--------|------------------------|--------|
-| Full Context | 0.556 | 37.5M |
-| SimpleMem | 0.520 | 22.5M |
-| **MemClaw** | **0.482** | **5.3M** |
-| Graphiti | 0.281 | 0.7M |
-| Mem0 | 0.273 | 3.0M |
-| MemU | 0.180 | 6.9M |
-| OpenClaw | 0.129 | 16.5M |
+| Rank | System | F1 | Judge | Tokens |
+|:----:|:------:|:--:|:-----:|:------:|
+| 1 | **PropMem** | **0.605** | **0.823** | 5.9M |
+| 2 | OpenClaw | 0.557 | 0.725 | 16.4M |
+| 3 | Full Context | 0.542 | 0.709 | 37.5M |
+| 4 | Hindsight | 0.489 | 0.676 | 24.2M |
+| 5 | Graphiti | 0.416 | 0.573 | 4.8M |
+| 6 | SimpleMem | 0.358 | 0.478 | 11.4M |
+| 7 | Mem0 | 0.344 | 0.497 | **3.0M** |
+| 8 | MemU | 0.299 | 0.399 | 6.7M |
 
-### Key Findings
+</div>
 
-- **Full Context and SimpleMem lead on pure retrieval** (excluding adversarial). Full Context has the advantage of seeing everything; SimpleMem's multi-round reflection is genuinely effective.
-- **MemClaw is the best cost/quality tradeoff** — #3 on retrieval at 7x fewer tokens than Full Context, #1 when adversarial resistance matters.
-- **Adversarial resistance correlates with entity awareness**, not retrieval quality. Graphiti (0.875) and MemClaw (0.812) both have entity-centric architectures. SimpleMem (0.299) has none.
-- **OpenClaw collapses with gpt-4.1-mini (0.277)** — raw chunks need a strong model. MemClaw barely changes because propositions pre-digest information upfront, so even cheap models answer correctly.
+Per-category F1:
 
-### Metrics
+<div align="center">
 
-| Metric | What it measures | How to get it |
-|--------|-----------------|---------------|
-| **Token F1** | Word-overlap between predicted and ground truth | `compute_f1(predicted, ground_truth)` — default, free |
-| **LLM Judge** | Relevance + completeness + accuracy (3 binary dimensions) | `evaluate_with_judge(question, expected, predicted)` — uses gpt-5.2 |
+| System | Factual | Temporal | Multi-hop | Inferential | Adversarial |
+|:------:|:-------:|:--------:|:---------:|:-----------:|:-----------:|
+| PropMem | 0.431 | **0.615** | 0.599 | **0.289** | 0.794 |
+| OpenClaw | 0.464 | 0.482 | 0.670 | 0.213 | 0.528 |
+| Full Context | **0.517** | 0.369 | **0.674** | 0.197 | 0.509 |
+| Hindsight | 0.431 | 0.306 | 0.526 | 0.206 | 0.647 |
+| Graphiti | 0.296 | 0.151 | 0.349 | 0.120 | **0.873** |
+| SimpleMem | 0.245 | 0.320 | 0.237 | 0.136 | 0.734 |
+| Mem0 | 0.267 | 0.104 | 0.330 | 0.174 | 0.629 |
+| MemU | 0.190 | 0.068 | 0.233 | 0.076 | 0.704 |
 
-Token F1 is the primary metric. LLM judge is supplementary — useful when token F1 is misleading (e.g., correct answer phrased differently from ground truth).
+</div>
 
----
+<p align="center"><em>LLM: gpt-4.1-mini. Embeddings: text-embedding-3-small. Judge: gpt-5.2 (avg of relevance, completeness, accuracy).</em></p>
 
-## 💡 Examples
+### LongMemEval
 
-Real outputs from the LoCoMo benchmark (gpt-4.1-mini, conv-26):
+[LongMemEval](https://arxiv.org/abs/2410.10813) tests memory over long conversations (up to 500 turns) with 6 question categories. Stratified sample of 102 questions (17 per category).
 
-**🔍 Factual** — *can the system recall specific facts about a person?*
+Overall metrics:
 
-```diff
-  Question: "What are Melanie's pets' names?"
-- OpenClaw: "None"                     [❌ missed entirely]
-- Mem0:     "Oliver and Luna"          [❌ missing Bailey]
-+ MemClaw:  "Bailey, Luna, Oliver"     [✅ all three]
-```
+<div align="center">
 
-**🕐 Temporal** — *can the system answer questions involving dates and time?*
+| Rank | System | F1 | Judge | Tokens |
+|:----:|:------:|:--:|:-----:|:------:|
+| 1 | **PropMem** | **0.550** | **0.716** | 23.1M |
+| 2 | SimpleMem | 0.480 | 0.667 | 20.8M |
+| 3 | OpenClaw | 0.244 | 0.598 | **0.7M** |
+| 4 | Full Context | 0.222 | 0.520 | 10.6M |
 
-```diff
-  Question: "When did Melanie sign up for a pottery class?"
-- OpenClaw: "None"                     [❌ missed entirely]
-- Mem0:     "None"                     [❌ missed entirely]
-+ MemClaw:  "2 July, 2023"             [✅ exact date]
-```
+</div>
 
-**🔗 Multi-hop** — *can the system connect facts across multiple conversation sessions?*
+Per-category scores:
 
-```diff
-  Question: "Where did Oliver hide his bone once?"
-- OpenClaw: "None"                     [❌ missed entirely]
-- Mem0:     "None"                     [❌ missed entirely]
-+ MemClaw:  "in Melanie's slipper"     [✅ correct]
-```
+<div align="center">
 
----
+| System | SS-User | SS-Asst | SS-Pref | Multi-Session | Temporal | Knowledge Update |
+|:------:|:-------:|:-------:|:-------:|:-------------:|:--------:|:----------------:|
+| PropMem | **0.851** | **0.767** | 0.147 | **0.582** | 0.424 | **0.528** |
+| SimpleMem | 0.752 | 0.566 | 0.126 | 0.382 | **0.578** | 0.475 |
+| OpenClaw | 0.401 | 0.432 | 0.127 | 0.082 | 0.185 | 0.234 |
+| Full Context | 0.265 | 0.415 | **0.177** | 0.062 | 0.212 | 0.202 |
 
-## 🔬 How It Works
+</div>
 
-**MemClaw** is a memory system that extracts atomic facts from conversations, organises them by person, and retrieves only what's relevant to answer each question, no cross-person confusion, no wasted context.
+<p align="center"><em>LLM: gpt-4.1. Embeddings: text-embedding-3-small. Judge: gpt-4o (LongMemEval native binary accuracy, matches the paper's evaluation protocol).</em></p>
 
-| 🧩 Proposition Extraction | 🎯 Entity-Filtered Retrieval | 💬 Chain-of-Thought Answering |
-|---|---|---|
-| LLM extracts every fact per session as a self-contained `{entity, fact, date}` triple — ~25 words, entity name always explicit | Question matched to a speaker, then search runs **only over that person's propositions** — Bob's facts are invisible when answering about Alice | Structured `{reasoning, answer}` JSON output. Inferential questions ("Would Alice...?") route to a dedicated reasoning prompt. Dates resolved to absolute. |
+**Note on token consumption:** Token counts shift in opposite directions depending on architecture. Systems with LLM-heavy ingestion (for example, PropMem and SimpleMem) tend to be more expensive on LongMemEval because conversations are much longer. Systems with mostly query-time LLM usage (for example, OpenClaw and Full Context) can become cheaper when fewer questions are evaluated.
 
+## Systems
 
-See [MEMCLAW.md](MEMCLAW.md) for the full design. The benchmark compares 7 systems:
+<div align="center">
 
 | System | Architecture | Retrieval |
-|--------|-------------|-----------|
-| **MemClaw** | MemClaw entity reasoning (custom-built) | Entity-filtered proposition search + CoT reasoning |
+|:------:|:------------:|:---------:|
+| **PropMem** | Entity-filtered propositions ([design](PROPMEM.md)) | Entity-scoped proposition search + CoT reasoning |
 | **OpenClaw** | Chunk-and-search | Hybrid BM25 + vector search, top-K chunks to LLM |
-| **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **Full Context** | Brute force | Entire conversation in the prompt |
+| **Hindsight** | Chunk + hierarchical summary | Summaries for routing, chunks for answering |
+| **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **SimpleMem** | Raw text + planning | Multi-round reflection (5+ LLM calls/question) |
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
 | **MemU** | Summary extraction | Vector search with intention routing |
 
----
+</div>
 
-## 🚀 Quick Start
+## Quick Start
 
-**Install:**
+Requirements: Python `>=3.11` and `OPENAI_API_KEY` set in your environment (or `.env`).
+For full parity with all 8 systems (including MemU), use Python `>=3.13`.
 
 ```bash
 uv sync --all-extras
 ```
 
-**Run the full benchmark:**
+Reproduce LoCoMo results:
 
 ```bash
-uv run python scripts/run_full_benchmark.py --systems all --num-samples 10 --skip-judge
+uv run python scripts/run_full_benchmark.py --systems all --num-samples 10 --llm-model gpt-4.1-mini
 ```
 
-#### Results are saved to `data/` as JSON files.
----
+Run a single system with a specific LLM (no judge):
 
-## 🛠️ Add Your System
+```bash
+uv run python scripts/run_full_benchmark.py --systems propmem --num-samples 1 --llm-model gpt-4.1-mini --skip-judge
+```
 
-Write an adapter function and register it inside the `SYSTEMS` dict in `scripts/run_full_benchmark.py`:
+Run a single system with judge enabled:
+
+```bash
+uv run python scripts/run_full_benchmark.py --systems propmem --num-samples 1 --llm-model gpt-4.1-mini
+```
+
+Reproduce LongMemEval results:
+
+```bash
+uv run python scripts/run_full_benchmark.py --benchmark longmemeval --data-file data/longmemeval_s_stratified_102.json --systems propmem,simplemem,openclaw,fullcontext --num-samples 102 --llm-model gpt-4.1
+```
+
+Generate the LongMemEval stratified sample used in this README:
+
+```bash
+uv run python scripts/stratified_sample.py --split s --total 102 --output data/longmemeval_s_stratified_102.json
+```
+
+Results are saved to `data/` as JSON files.
+
+## Use PropMem in Your Agent
+
+You can use PropMem directly as an app memory layer (no benchmark runner required):
+
+```python
+from agents_memory import PropMemMemory
+
+memory = PropMemMemory(
+    user_name="Asad",
+    assistant_name="Assistant",
+    llm_model="gpt-4.1-mini",
+)
+
+memory.add_session(
+    [
+        {"speaker": "Asad", "text": "I prefer quiet coffee shops for work."},
+        {"speaker": "Assistant", "text": "Noted. You prefer quiet coffee shops."},
+    ],
+    session_date="2026-03-01 10:30:00",
+)
+
+answer = memory.ask("Where does Asad prefer to work?")
+print(answer)
+```
+
+For multiple conversations, call `add_session(...)` for each new session, then query
+with `ask(...)` or `ask_with_details(...)`.
+
+## Add Your System
+
+Write an adapter function and register it in the `SYSTEMS` dict in `scripts/run_full_benchmark.py`:
 
 ```python
 def run_mysystem(conv: dict, llm_model: str, run_judge: bool) -> list[dict]:
@@ -176,85 +220,47 @@ SYSTEMS: dict[str, dict] = {
 Then run:
 
 ```bash
-# Your system vs MemClaw on 1 conversation
-uv run python scripts/run_full_benchmark.py --systems mysystem,memclaw --num-samples 1 --skip-judge
+# Quick test: your system vs PropMem on 1 conversation
+uv run python scripts/run_full_benchmark.py --systems mysystem,propmem --num-samples 1 --skip-judge
 
-# Full benchmark (10 conversations, 1986 QA pairs)
-uv run python scripts/run_full_benchmark.py --systems mysystem --num-samples 10 --skip-judge
-
-# With LLM-as-judge evaluation
+# Full benchmark with judge (10 conversations, 1986 QA pairs)
 uv run python scripts/run_full_benchmark.py --systems mysystem --num-samples 10
-
-# Custom dataset
-uv run python scripts/run_full_benchmark.py --systems mysystem --data-file data/your_data.json
 ```
 
-**Evaluate your own system directly:**
+## Add Your Benchmark
 
-```python
-from agents_memory.evaluation import compute_f1
-from agents_memory.locomo import download_locomo
+Any QA dataset works. Register a loader in `scripts/run_full_benchmark.py` and run with `--benchmark mybench`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the data format and details.
 
-data = download_locomo()  # downloads LoCoMo once, caches locally
+## Fairness Notes
 
-for conv in data[:1]:
-    your_system.ingest(conv)
-    for qa in conv["qa"]:
-        predicted = your_system.answer(qa["question"])
-        f1 = compute_f1(predicted, qa["answer"])
-        print(f"F1={f1:.3f}  Q: {qa['question'][:60]}")
-```
+- **Graphiti** uses the open-source `graphiti-core` library with Kuzu (embedded graph DB), not the commercial Zep platform which uses Neo4j + BGE-m3 reranking. Zep's published numbers (75-80% accuracy) use a different metric (LLM-judge accuracy, not token F1) and their commercial infrastructure. The Mem0 paper independently measured Zep's platform at token F1 ~0.35-0.50 per category. Our 0.416 with the open-source library is in the same range.
+- **Mem0**: At evaluation time, there was a reported timestamp-handling issue on the Mem0 platform ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) that may affect temporal reasoning. Our Mem0 temporal F1 (0.104) is materially lower than the paper's reported value (0.489), which may depress overall Mem0 performance in this benchmark.
+- **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy, a fundamentally different metric from token F1. Not directly comparable.
+- **Hindsight** builds both summaries and chunks, explaining the high token count (24.2M).
 
-`compute_f1` is token-level F1 (same metric used in the LoCoMo paper). It handles adversarial questions (empty ground truth) automatically.
+## License
 
+Apache License 2.0. See [LICENSE](LICENSE).
+Third-party attribution and notices: [NOTICE](NOTICE).
 
-### Data format
+## Disclaimer
 
-```json
-{
-  "sample_id": "conv-1",
-  "conversation": {
-    "speaker_a": "Alice",
-    "speaker_b": "Bob",
-    "session_1": [
-      {"speaker": "Alice", "text": "I just moved to Berlin", "dia_id": "1"},
-      {"speaker": "Bob", "text": "How's the weather?", "dia_id": "2"}
-    ],
-    "session_1_date_time": "2024-01-15 14:30:00",
-    "session_2": [...],
-    "session_2_date_time": "2024-02-20 10:00:00"
-  },
-  "qa": [
-    {"question": "Where does Alice live?", "answer": "Berlin", "category": 1},
-    {"question": "When did Alice move?", "answer": "January 2024", "category": 2}
-  ]
-}
-```
+MemEval is provided "as is," without warranty of any kind, express or implied,
+including but not limited to the warranties of merchantability, fitness for a
+particular purpose, and noninfringement. In no event shall the authors or
+copyright holders be liable for any claim, damages, or other liability, whether
+in an action of contract, tort, or otherwise, arising from, out of, or in
+connection with the software or the use or other dealings in the software.
 
-#### QA categories: 1=Factual, 2=Temporal, 3=Inferential, 4=Multi-hop, 5=Adversarial (empty answer = correct refusal).
----
+## References
 
-## ⚖️ Fairness Notes
-
-- **Graphiti** uses the open-source `graphiti-core` library with Kuzu (embedded graph DB), not the commercial Zep platform which uses Neo4j + BGE-m3 reranking. Zep's published numbers (75-80% accuracy) use a different metric (LLM-judge accuracy, not token F1) and their commercial infrastructure. The Mem0 paper independently measured Zep's platform at token F1 ~0.35-0.50 per category — our 0.415 with the open-source library is in the same range.
-- **Mem0** has a known timestamp bug ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) where the platform uses current system date instead of conversation timestamps, degrading temporal reasoning. Our Mem0 temporal F1 (0.121) is far below the paper's (0.489). This likely depresses our Mem0 overall F1.
-- **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy — a fundamentally different metric from token F1. Not directly comparable.
-- **SimpleMem** results are close to the paper's: our 4-category average is 45.8 vs paper's 43.2 (temporal matches exactly at 58.3 vs 58.6).
-
----
-
-## 📄 License
-
-This project is licensed under the **Apache License 2.0** — see the [LICENSE](LICENSE) file for details.
-
----
-
-## 📝 References
-
-- **Benchmark**: [LoCoMo](https://arxiv.org/abs/2402.17753) — Long-context memory evaluation framework
-- **Survey**: [Memory in the Age of AI Agents](https://arxiv.org/abs/2512.13564) — Overview of memory systems for agents
-- **Mem0**: [Mem0](https://arxiv.org/abs/2504.19413) — Fact extraction + vector search memory
-- **SimpleMem**: [SimpleMem](https://arxiv.org/abs/2601.02553) — Multi-round reflection memory system
-- **Graphiti**: [Graphiti](https://github.com/getzep/graphiti) — Temporal knowledge graph by Zep AI
-- **OpenClaw**: [OpenClaw](https://docs.openclaw.ai/concepts/memory) — OpenClaw memory system
-- **MemU**: [MemU](https://github.com/NevaMind-AI/memU) — Summary-based memory with intention routing
+- [LoCoMo](https://arxiv.org/abs/2402.17753) (benchmark)
+- [LongMemEval](https://arxiv.org/abs/2410.10813) (benchmark)
+- [Memory in the Age of AI Agents](https://arxiv.org/abs/2512.13564) (survey)
+- [PropMem Design](PROPMEM.md) (this repo)
+- [Mem0](https://arxiv.org/abs/2504.19413)
+- [SimpleMem](https://arxiv.org/abs/2601.02553)
+- [Graphiti](https://github.com/getzep/graphiti)
+- [Hindsight](https://arxiv.org/abs/2503.02972)
+- [OpenClaw Memory](https://docs.openclaw.ai/concepts/memory)
+- [MemU](https://github.com/NevaMind-AI/memU)

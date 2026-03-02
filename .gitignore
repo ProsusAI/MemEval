@@ -1,6 +1,5 @@
 # Data and models (large files)
-data/raw/
-data/processed/
+data/
 models/
 
 # Virtual environment
@@ -22,6 +21,9 @@ lancedb_data/
 
 # OS
 .DS_Store
+
+# Claude Code
+.claude/
 
 # Environment
 .env
