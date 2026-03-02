@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Plug-and-play memory for agents — proposition extraction, entity-filtered retrieval, hybrid search"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-authors = [{name = "Prosus Services B.V."}]
+authors = [{name = "MIH AI B.V."}]
 requires-python = ">=3.11"
 dependencies = [
     "hindsight-client>=0.4.13",
