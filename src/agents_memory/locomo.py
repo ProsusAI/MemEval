@@ -83,3 +83,22 @@ def extract_dialogues(conversation: dict) -> list[dict]:
                 )
 
     return dialogues
+
+
+def format_as_markdown(dialogues: list[dict]) -> str:
+    """Format LoCoMo dialogue turns as a markdown document."""
+    lines = []
+    current_date = None
+    for d in dialogues:
+        timestamp = d.get("timestamp", "")
+        date_part = timestamp.split(" ")[0] if timestamp else ""
+        if date_part and date_part != current_date:
+            current_date = date_part
+            lines.append(f"\n## {current_date}\n")
+        speaker = d.get("speaker", "Unknown")
+        text = d.get("text", "")
+        if timestamp:
+            lines.append(f"**{speaker}** ({timestamp}): {text}")
+        else:
+            lines.append(f"**{speaker}**: {text}")
+    return "\n".join(lines)
