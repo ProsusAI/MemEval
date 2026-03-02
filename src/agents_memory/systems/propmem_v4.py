@@ -1,4 +1,4 @@
-"""PropMem: proposition-based entity-centric retrieval."""
+"""PropMem v4: LLM classifier, temporal boost, knowledge updates."""
 
 import os
 
@@ -8,7 +8,7 @@ from agents_memory.propmem import PropMemSystem
 from agents_memory.systems._helpers import _qa_results
 
 SYSTEM_INFO = {
-    "architecture": "proposition-based entity-centric retrieval",
+    "architecture": "propmem v4: LLM classifier + temporal + knowledge updates",
     "infrastructure": "vector store + BM25",
 }
 
@@ -18,7 +18,11 @@ def run(
     category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    system = PropMemSystem()
+    system = PropMemSystem(
+        use_llm_classifier=True,
+        use_temporal_boost=True,
+        use_knowledge_updates=True,
+    )
     ingest = system.ingest_conversation(conv, client, llm_model)
     print(
         f"    Ingested: chunks={ingest['num_chunks']}, "

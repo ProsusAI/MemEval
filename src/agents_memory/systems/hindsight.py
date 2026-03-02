@@ -21,7 +21,7 @@ from datetime import datetime
 from openai import OpenAI
 
 from agents_memory.locomo import extract_dialogues
-from agents_memory.systems._helpers import _qa_results_async, answer_prompt, run_async
+from agents_memory.systems._helpers import _qa_results_async, run_async
 from agents_memory.token_tracker import _record_call, _record_usage
 
 
@@ -113,7 +113,13 @@ async def run(
 
     # Answer questions using recall + OpenAI
     client = OpenAI(api_key=api_key)
-    sys_prompt = answer_prompt(judge_fn)
+    sys_prompt = (
+        "Answer the question concisely but completely using ONLY the "
+        "provided memories. If not found, say 'None'."
+        if judge_fn == "longmemeval"
+        else "Answer the question concisely (1-5 words) using ONLY the "
+        "provided memories. If not found, say 'None'."
+    )
 
     async def answer_fn(question: str) -> str:
         recall_resp = await hs.arecall(

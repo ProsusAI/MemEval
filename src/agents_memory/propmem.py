@@ -77,7 +77,7 @@ Answer the question using ONLY the evidence below.
 {chunks_section}
 
 Question: {question}
-{date_context}
+
 Rules:
 1. Reason step by step from the evidence
 2. CRITICAL: The conversation context discusses MULTIPLE people. \
@@ -87,19 +87,17 @@ Do NOT attribute another person's experiences, activities, or opinions to \
 3. ONLY answer if the specific fact is DIRECTLY stated in the evidence for \
 the person asked about. Do NOT guess or construct answers from vague evidence.
 4. For "Would..." questions, infer from {entity_name}'s stated facts only
-5. Answer concisely. Copy exact words from the evidence. Use commas to \
-separate multiple items.
-6. If the question asks for a total, count, or aggregate (e.g. "how many", \
-"total", "how much"), COMPUTE the result — do NOT list individual items.
-7. For dates, resolve relative references to absolute dates using timestamps \
-and the conversation date range above.
-8. Answer in the SAME LANGUAGE as the question
-9. If the answer is not clearly about {entity_name} in the evidence, say "None"
-10. If NO propositions about {entity_name} are found, answer "None" immediately \
+5. Answer must be a DIRECT listing of facts — NO full sentences, NO "The user...", \
+NO explanations. Use commas to separate multiple items. Copy exact words from \
+the evidence.
+6. For dates, resolve relative references to absolute dates using timestamps
+7. Answer in the SAME LANGUAGE as the question
+8. If the answer is not clearly about {entity_name} in the evidence, say "None"
+9. If NO propositions about {entity_name} are found, answer "None" immediately \
 without reasoning.
 
 Return JSON: {{"reasoning": "brief thought process", \
-"answer": "concise answer"}}"""
+"answer": "direct fact listing, comma-separated"}}"""
 
 ANSWER_PROMPT_INFERENTIAL = """\
 Answer this inference question using the evidence below. This question \
@@ -110,7 +108,7 @@ requires you to REASON from known facts to draw a logical conclusion.
 {chunks_section}
 
 Question: {question}
-{date_context}
+
 Rules:
 1. This is an INFERENCE question — you must reason from {entity_name}'s known \
 facts, interests, personality, and circumstances
@@ -141,7 +139,7 @@ a conversation between a user and an AI assistant.
 {chunks_section}
 
 Question: {question}
-{date_context}
+
 Rules:
 1. Reason step by step from the evidence
 2. The question is about the USER's information — preferences, experiences, \
@@ -149,13 +147,9 @@ facts shared during conversation. The assistant's responses provide context.
 3. Answer if the fact is stated or clearly implied in the evidence
 4. Answer concisely but completely. Copy exact words from the evidence \
 where possible. Use commas to separate multiple items.
-5. If the question asks for a total, count, or aggregate (e.g. "how many", \
-"total", "how much", "altogether"), COMPUTE the result from the evidence — \
-do NOT list individual items. Example: if evidence shows $100 + $100, answer "$200".
-6. For dates, resolve relative references (e.g. "two months ago", "last week") \
-to absolute dates using the session timestamps and conversation date range above.
-7. Answer in the SAME LANGUAGE as the question
-8. If the answer cannot be found in the evidence, say "None"
+5. For dates, resolve relative references to absolute dates using timestamps
+6. Answer in the SAME LANGUAGE as the question
+7. If the answer cannot be found in the evidence, say "None"
 
 Return JSON: {{"reasoning": "brief thought process", \
 "answer": "concise but complete answer"}}"""
@@ -169,7 +163,7 @@ from a conversation between a user and an AI assistant.
 {chunks_section}
 
 Question: {question}
-{date_context}
+
 Rules:
 1. This is an INFERENCE question — reason from the user's known facts, \
 interests, personality, and circumstances
@@ -188,7 +182,7 @@ or a brief factual phrase with key details.
 Return JSON: {{"reasoning": "step by step inference from known facts", \
 "answer": "direct answer, no filler"}}"""
 
-# --- Unified classifier prompt ---
+# --- v4: unified question classifier ---
 
 CLASSIFY_PROMPT = """\
 Given this question and the known entities, classify it.
@@ -198,20 +192,18 @@ Question: {question}
 
 Return JSON:
 {{"entity": "<exact name from list or null>", "is_inferential": true/false, \
-"is_temporal": true/false, "needs_math": true/false}}
+"is_temporal": true/false}}
 
 Rules:
 - entity: Match pronouns/aliases to entity names. null if unclear.
 - is_inferential: Requires reasoning, not direct fact recall \
 (would/could/likely/prefer)
-- needs_math: Requires arithmetic or aggregation \
-(how many/how much/total/sum/most/least)
 - is_temporal: Involves time ordering, recency, dates \
 (before/after/when/first/last/latest)"""
 
-# --- Unified answer prompt ---
+# --- v4: unified answer prompt ---
 
-ANSWER_PROMPT_UNIFIED = """\
+ANSWER_PROMPT_V4 = """\
 Answer the question using ONLY the evidence below.
 
 {entity_section}
@@ -302,29 +294,29 @@ class PropMemSystem:
     """PropMem: proposition-based memory with entity-centric retrieval.
 
     Ingestion:
-      - Chunk + embed raw markdown (OpenClaw) for fallback retrieval
-      - Extract atomic propositions per entity per session (LLM)
-      - Embed propositions
+      1. Chunk + embed raw markdown (OpenClaw) — fallback retrieval
+      2. Extract atomic propositions per entity per session (LLM)
+      3. Embed all propositions
 
     Per question:
-      - Identify target entity (string matching or classifier)
-      - Retrieve entity-filtered propositions (vector + BM25)
-      - Retrieve raw chunks (broader context)
-      - Generate CoT-style answer with structured evidence
+      1. Identify target entity (string matching)
+      2. Retrieve entity-filtered propositions (vector + BM25)
+      3. Retrieve raw chunks (broader context)
+      4. CoT answer with structured evidence
     """
 
     embedding_model: str = "text-embedding-3-small"
     top_k_props: int = 30
     top_k_chunks: int = 3
 
-    # Core retrieval toggles
+    # Ablation flags (all True = v3 behaviour)
     use_propositions: bool = True
     use_chunks: bool = True
     use_entity_filter: bool = True
     use_clustering: bool = True
     use_bm25: bool = True
 
-    # Optional enhanced features (all False by default)
+    # v4 feature flags (all False = v3 behaviour)
     use_llm_classifier: bool = False
     use_temporal_boost: bool = False
     use_knowledge_updates: bool = False
@@ -336,7 +328,6 @@ class PropMemSystem:
     chunk_embeddings: list[list[float]] = field(default_factory=list)
     entity_names: list[str] = field(default_factory=list)
     _embedding_cache: dict[str, list[float]] = field(default_factory=dict)
-    _date_range: str = ""  # "January 2023 to December 2023" for prompt context
 
     # Cluster data for topic-based retrieval (used when entity=None)
     _cluster_centroids: Any = field(default=None, init=False, repr=False)
@@ -365,7 +356,7 @@ class PropMemSystem:
         speaker_b = conversation.get("speaker_b", "User B")
         self.entity_names = [speaker_a, speaker_b]
 
-        # Build raw chunks (OpenClaw) for fallback
+        # 1. Raw chunks (OpenClaw) for fallback
         dialogues = extract_dialogues(conv)
         markdown = format_as_markdown(dialogues)
         if self.use_chunks:
@@ -375,7 +366,7 @@ class PropMemSystem:
                     [c.text for c in self.chunks], model=self.embedding_model
                 )
 
-        # Extract propositions per session
+        # 2. Extract propositions per session
         if self.use_propositions:
             session_keys = sorted(
                 [
@@ -416,28 +407,18 @@ class PropMemSystem:
                         except Exception as err:
                             print(f"  Extraction error ({futures[future]}): {err}")
 
-            # Embed propositions
+            # 3. Embed propositions
             if self.propositions:
                 self.proposition_embeddings = embed_texts(
                     [p.text for p in self.propositions], model=self.embedding_model
                 )
 
-                # Parse date ordinals (needed for temporal boost + knowledge updates)
-                if self.use_temporal_boost or self.use_knowledge_updates:
+                # Parse date ordinals for temporal boosting
+                if self.use_temporal_boost:
                     for p in self.propositions:
                         p.date_ordinal = _parse_date_ordinal(p.date)
 
-        # Compute conversation date range for prompt context
-        session_dates = []
-        for k in conversation:
-            if k.endswith("_date_time"):
-                d = conversation[k]
-                if d:
-                    session_dates.append(d)
-        if session_dates:
-            self._date_range = f"{session_dates[0]} to {session_dates[-1]}"
-
-        # Build clusters for topic-based retrieval (fallback when entity=None)
+        # 4. Build clusters for topic-based retrieval (fallback when entity=None)
         n_clusters = 0
         if self.use_clustering and self.proposition_embeddings:
             n_clusters = self._cluster_propositions()
@@ -571,49 +552,6 @@ class PropMemSystem:
         if " prefer " in q_lower and "?" in question:
             return True
         return False
-
-    @staticmethod
-    def _is_temporal(question: str) -> bool:
-        """Detect temporal questions that involve dates, ordering, or time."""
-        q_lower = question.lower().strip()
-        temporal_patterns = [
-            r"\bwhen\b", r"\bbefore\b", r"\bafter\b", r"\bago\b",
-            r"\bfirst\b", r"\blast\b", r"\blatest\b", r"\brecent",
-            r"\bearliest\b", r"\border\b", r"\bsequence\b",
-            r"\bhow long\b", r"\bhow many days\b", r"\bhow many months\b",
-            r"\bhow many years\b", r"\bhow many weeks\b",
-            r"\bwhat date\b", r"\bwhat time\b", r"\bwhich month\b",
-            r"\bwhich year\b", r"\bsince\b", r"\bduring\b",
-        ]
-        return any(re.search(p, q_lower) for p in temporal_patterns)
-
-    @staticmethod
-    def _needs_math(question: str) -> bool:
-        """Detect quantitative questions requiring arithmetic or aggregation."""
-        q_lower = question.lower().strip()
-        math_patterns = [
-            r"\bhow many\b",
-            r"\bhow much\b",
-            r"\btotal\b",
-            r"\bsum\b",
-            r"\bnumber of\b",
-            r"\bcount\b",
-            r"\bmost\b",
-            r"\bleast\b",
-            r"\bhighest\b",
-            r"\blowest\b",
-            r"\bdifference\b",
-            r"\bspent\b",
-            r"\bspend\b",
-            r"\bcost\b",
-            r"\bprice\b",
-            r"\bpoints?\b",
-            r"\bhours?\b",
-            r"\bminutes?\b",
-            r"\bseconds?\b",
-            r"\bweight\b",
-        ]
-        return any(re.search(p, q_lower) for p in math_patterns)
 
     # ------------------------------------------------------------------
     # Entity identification
@@ -908,8 +846,8 @@ class PropMemSystem:
     # Answer generation
     # ------------------------------------------------------------------
 
+    @staticmethod
     def _generate_answer(
-        self,
         question: str,
         propositions: list[tuple[Proposition, float]],
         chunks: list[tuple[MemoryChunk, float]],
@@ -941,11 +879,6 @@ class PropMemSystem:
         else:
             chunks_section = ""
 
-        # Date context for temporal resolution
-        date_context = ""
-        if self._date_range:
-            date_context = f"Conversation date range: {self._date_range}"
-
         # Select prompt based on conversation type
         if single_user:
             prompt_template = (
@@ -957,7 +890,6 @@ class PropMemSystem:
                 entity_section=entity_section,
                 chunks_section=chunks_section,
                 question=question,
-                date_context=date_context,
             )
         else:
             entity_name = entity if entity else "the person asked about"
@@ -969,7 +901,6 @@ class PropMemSystem:
                 chunks_section=chunks_section,
                 question=question,
                 entity_name=entity_name,
-                date_context=date_context,
             )
 
         try:
@@ -988,7 +919,7 @@ class PropMemSystem:
             return ""
 
     # ------------------------------------------------------------------
-    # Unified question classifier
+    # v4: unified question classifier
     # ------------------------------------------------------------------
 
     def _classify_question(
@@ -997,9 +928,9 @@ class PropMemSystem:
         client: OpenAI,
         model: str,
     ) -> dict:
-        """Classify question via LLM: entity, is_inferential, is_temporal, needs_math.
+        """Classify question via LLM: entity, is_inferential, is_temporal.
 
-        Falls back to heuristic classification on error.
+        Falls back to v3 heuristics on error.
         """
         entities_str = ", ".join(self.entity_names) if self.entity_names else "unknown"
         prompt = CLASSIFY_PROMPT.format(entities=entities_str, question=question)
@@ -1028,19 +959,17 @@ class PropMemSystem:
                 "entity": entity,
                 "is_inferential": bool(result.get("is_inferential", False)),
                 "is_temporal": bool(result.get("is_temporal", False)),
-                "needs_math": bool(result.get("needs_math", False)),
             }
         except Exception as err:
             print(f"  Classifier error (falling back to heuristics): {err}")
             return {
                 "entity": self._identify_entity(question),
                 "is_inferential": self._is_inferential(question),
-                "is_temporal": self._is_temporal(question),
-                "needs_math": self._needs_math(question),
+                "is_temporal": False,
             }
 
     # ------------------------------------------------------------------
-    # Knowledge update handling (contradiction detection)
+    # v4: knowledge update handling (contradiction detection)
     # ------------------------------------------------------------------
 
     def _apply_knowledge_updates(
@@ -1086,11 +1015,11 @@ class PropMemSystem:
         return result
 
     # ------------------------------------------------------------------
-    # Unified answer generation
+    # v4: unified answer generation
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _generate_answer_unified(
+    def _generate_answer_v4(
         question: str,
         propositions: list[tuple[Proposition, float]],
         chunks: list[tuple[MemoryChunk, float]],
@@ -1099,10 +1028,9 @@ class PropMemSystem:
         model: str,
         is_inferential: bool = False,
         is_temporal: bool = False,
-        needs_math: bool = False,
         single_user: bool = False,
     ) -> str:
-        """Generate answer using the unified prompt template."""
+        """Generate answer using the unified v4 prompt template."""
         # Build entity section
         if entity and propositions:
             prop_lines = [f"- [{p.date}] {p.text}" for p, _ in propositions]
@@ -1134,19 +1062,7 @@ class PropMemSystem:
         else:
             entity_constraint = "Use facts about the person asked about."
 
-        if needs_math:
-            answer_style = (
-                "This is a QUANTITATIVE question — compute the requested value "
-                "from the evidence (count/sum/total/most/least). "
-                "Show your arithmetic in the reasoning, but in the answer field "
-                "return ONLY the final result in the simplest form "
-                "(e.g., '2', '$140', 'Thrive Market')."
-            )
-            none_rule = (
-                "7. If the evidence does not contain enough information to "
-                "compute the answer, say 'Not mentioned'"
-            )
-        elif is_inferential:
+        if is_inferential:
             answer_style = (
                 "This is an INFERENCE question — reason from known facts, "
                 "interests, personality, and circumstances. "
@@ -1174,15 +1090,8 @@ class PropMemSystem:
                 "Note: This is a TEMPORAL question. "
                 "Pay attention to dates and time ordering."
             )
-        if needs_math:
-            if classification_info:
-                classification_info += "\n"
-            classification_info += (
-                "Note: This is a QUANTITATIVE question. "
-                "Compute totals/counts/comparisons from evidence."
-            )
 
-        prompt = ANSWER_PROMPT_UNIFIED.format(
+        prompt = ANSWER_PROMPT_V4.format(
             entity_section=entity_section,
             chunks_section=chunks_section,
             question=question,
@@ -1204,7 +1113,7 @@ class PropMemSystem:
             result = json.loads(content)
             return result.get("answer", "").strip()
         except (json.JSONDecodeError, Exception) as err:
-            print(f"  Unified answer error: {err}")
+            print(f"  Answer v4 error: {err}")
             return ""
 
     # ------------------------------------------------------------------
@@ -1238,7 +1147,7 @@ class PropMemSystem:
         if not llm_model:
             llm_model = os.environ.get("LLM_MODEL", "gpt-4.1")
 
-        # Identify entity, question type, and conversation type
+        # Step 1: Identify entity, question type, and conversation type
         _generic = {"user", "assistant", "system", "bot", "ai"}
         single_user = all(n.lower() in _generic for n in self.entity_names)
 
@@ -1249,44 +1158,32 @@ class PropMemSystem:
             entity = classification["entity"]
             inferential = classification["is_inferential"]
             is_temporal = classification["is_temporal"]
-            needs_math = bool(classification.get("needs_math", False))
         else:
             entity = self._identify_entity(question)
             inferential = self._is_inferential(question)
-            is_temporal = self._is_temporal(question)
-            needs_math = False
+            is_temporal = False
 
-        # Backstop: heuristic detection for quantitative questions
-        needs_math = needs_math or self._needs_math(question)
-
-        # Retrieve propositions
+        # Step 2: Retrieve entity-filtered propositions
         # Increase top_k when chunks are disabled to compensate
         prop_k = self.top_k_props
         if not self.use_chunks:
             prop_k = int(prop_k * 1.5)
-        if needs_math:
-            prop_k = max(prop_k, 60)
 
         props = []
         if self.use_propositions:
             props = self._retrieve_propositions(
-                question,
-                entity=entity,
-                top_k=prop_k,
-                is_temporal=is_temporal and not needs_math,
+                question, entity=entity, top_k=prop_k, is_temporal=is_temporal
             )
 
         # Knowledge update handling: penalize older contradicted propositions
-        if self.use_knowledge_updates and props and entity and (not needs_math):
+        if self.use_knowledge_updates and props and entity:
             props = self._apply_knowledge_updates(props)
 
-        # Retrieve raw chunks (more chunks for single-user since
+        # Step 3: Retrieve raw chunks (more chunks for single-user since
         # entity filtering doesn't apply and chunks provide broader context)
         chunk_k = self.top_k_chunks
         if single_user:
             chunk_k *= 2
-        if needs_math:
-            chunk_k = max(chunk_k, 10)
         if not self.use_propositions:
             chunk_k = max(chunk_k, 10)
 
@@ -1294,9 +1191,9 @@ class PropMemSystem:
         if self.use_chunks:
             chunks = self._retrieve_chunks(question, top_k=chunk_k, entity=entity)
 
-        # Generate answer (route to appropriate prompt)
-        if self.use_llm_classifier or needs_math:
-            answer = self._generate_answer_unified(
+        # Step 4: Generate answer (route to appropriate prompt)
+        if self.use_llm_classifier:
+            answer = self._generate_answer_v4(
                 question,
                 props,
                 chunks,
@@ -1305,7 +1202,6 @@ class PropMemSystem:
                 llm_model,
                 is_inferential=inferential,
                 is_temporal=is_temporal,
-                needs_math=needs_math,
                 single_user=single_user,
             )
         else:
@@ -1331,5 +1227,4 @@ class PropMemSystem:
             "num_propositions": len(props),
             "num_chunks": len(chunks),
             "is_inferential": inferential,
-            "needs_math": needs_math,
         }

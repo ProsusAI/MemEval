@@ -1,4 +1,4 @@
-"""PropMem: proposition-based entity-centric retrieval."""
+"""Ablation: PropMem without chunk retrieval (propositions only)."""
 
 import os
 
@@ -8,7 +8,7 @@ from agents_memory.propmem import PropMemSystem
 from agents_memory.systems._helpers import _qa_results
 
 SYSTEM_INFO = {
-    "architecture": "proposition-based entity-centric retrieval",
+    "architecture": "propmem ablation: no chunks (propositions only)",
     "infrastructure": "vector store + BM25",
 }
 
@@ -18,12 +18,11 @@ def run(
     category_names: dict | None = None, judge_fn: str | None = None,
 ) -> list[dict]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    system = PropMemSystem()
+    system = PropMemSystem(use_chunks=False)
     ingest = system.ingest_conversation(conv, client, llm_model)
     print(
         f"    Ingested: chunks={ingest['num_chunks']}, "
-        f"propositions={ingest['num_propositions']}, "
-        f"clusters={ingest.get('num_clusters', 0)}"
+        f"propositions={ingest['num_propositions']}"
     )
 
     return _qa_results(

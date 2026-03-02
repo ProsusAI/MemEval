@@ -6,12 +6,21 @@ from openai import OpenAI
 
 from agents_memory.locomo import extract_dialogues, format_as_markdown
 from agents_memory.openclaw import chunk_markdown, embed_texts, hybrid_search
-from agents_memory.systems._helpers import _qa_results, answer_prompt
+from agents_memory.systems._helpers import _qa_results
 
 SYSTEM_INFO = {
     "architecture": "hybrid BM25 + vector chunk retrieval",
     "infrastructure": "vector store + BM25",
 }
+
+_ANSWER_PROMPT_SHORT = (
+    "Answer the question concisely (1-5 words) using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
+_ANSWER_PROMPT_NATURAL = (
+    "Answer the question concisely but completely using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
 
 
 def run(
@@ -28,7 +37,10 @@ def run(
     )
     print(f"    Chunks: {len(chunks)}")
 
-    sys_prompt = answer_prompt(judge_fn)
+    sys_prompt = (
+        _ANSWER_PROMPT_NATURAL if judge_fn == "longmemeval"
+        else _ANSWER_PROMPT_SHORT
+    )
 
     def answer_fn(question: str) -> str:
         query_emb = embed_texts([question], model="text-embedding-3-small")[0]

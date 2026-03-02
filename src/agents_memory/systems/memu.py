@@ -8,12 +8,21 @@ from pathlib import Path
 from openai import OpenAI
 
 from agents_memory.locomo import extract_dialogues
-from agents_memory.systems._helpers import _qa_results_async, answer_prompt, run_async
+from agents_memory.systems._helpers import _qa_results_async, run_async
 
 SYSTEM_INFO = {
     "architecture": "memory service with file-based memorize",
     "infrastructure": "MemU library",
 }
+
+_ANSWER_PROMPT_SHORT = (
+    "Answer the question concisely (1-5 words) using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
+_ANSWER_PROMPT_NATURAL = (
+    "Answer the question concisely but completely using ONLY the "
+    "provided memories. If not found, say 'None'."
+)
 
 
 @run_async
@@ -53,7 +62,10 @@ async def run(
         json.dump(conv_data, f)
         temp_path = f.name
 
-    sys_prompt = answer_prompt(judge_fn)
+    sys_prompt = (
+        _ANSWER_PROMPT_NATURAL if judge_fn == "longmemeval"
+        else _ANSWER_PROMPT_SHORT
+    )
 
     try:
         await service.memorize(

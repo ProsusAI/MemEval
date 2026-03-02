@@ -23,7 +23,7 @@ That cost reporting matters because LLM calls often differ by an order of magnit
 architectures. Evaluation combines token F1 with LLM-as-judge scores, with per-category
 breakdowns to show where each system actually wins.
 
-The framework is extensible. It currently ships with 8 memory systems and 2 benchmarks
+The framework is extensible. It currently ships with 9 memory systems and 2 benchmarks
 ([LoCoMo](https://arxiv.org/abs/2402.17753) and [LongMemEval](https://arxiv.org/abs/2410.10813)),
 but adding new systems or datasets is straightforward.
 
@@ -38,7 +38,7 @@ and answering; excludes embedding and judge calls.
 
 ### LoCoMo
 
-8 systems, 10 conversations, 1,986 QA pairs.
+9 systems, 10 conversations, 1,986 QA pairs. All use gpt-4.1-mini and text-embedding-3-small except **Memory-R1**, which uses a fine-tuned Qwen-2.5-7B.
 
 Overall metrics:
 
@@ -50,10 +50,11 @@ Overall metrics:
 | 2 | OpenClaw | 0.557 | 0.725 | 16.4M |
 | 3 | Full Context | 0.542 | 0.709 | 37.5M |
 | 4 | Hindsight | 0.489 | 0.676 | 24.2M |
-| 5 | Graphiti | 0.416 | 0.573 | 4.8M |
-| 6 | SimpleMem | 0.358 | 0.478 | 11.4M |
-| 7 | Mem0 | 0.344 | 0.497 | **3.0M** |
-| 8 | MemU | 0.299 | 0.399 | 6.7M |
+| 5 | Graphiti | 0.416 | 0.573 | 5.1M |
+| 6 | Memory-R1 | 0.389 | 0.569 | 3.4M |
+| 7 | SimpleMem | 0.358 | 0.478 | 11.4M |
+| 8 | Mem0 | 0.344 | 0.497 | **3.0M** |
+| 9 | MemU | 0.299 | 0.399 | 6.7M |
 
 </div>
 
@@ -68,6 +69,7 @@ Per-category F1:
 | Full Context | **0.517** | 0.369 | **0.674** | 0.197 | 0.509 |
 | Hindsight | 0.431 | 0.306 | 0.526 | 0.206 | 0.647 |
 | Graphiti | 0.296 | 0.151 | 0.349 | 0.120 | **0.873** |
+| Memory-R1 | 0.370 | 0.116 | 0.460 | 0.193 | 0.504 |
 | SimpleMem | 0.245 | 0.320 | 0.237 | 0.136 | 0.734 |
 | Mem0 | 0.267 | 0.104 | 0.330 | 0.174 | 0.629 |
 | MemU | 0.190 | 0.068 | 0.233 | 0.076 | 0.704 |
@@ -123,6 +125,7 @@ Per-category scores:
 | **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **SimpleMem** | Raw text + planning | Multi-round reflection (5+ LLM calls/question) |
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
+| **Memory-R1** | Two-agent RL ([arXiv:2508.19828](https://arxiv.org/abs/2508.19828)) | SFT+GRPO fine-tuned Qwen-2.5-7B (Memory Manager + Answer Agent) |
 | **MemU** | Summary extraction | Vector search with intention routing |
 
 </div>
@@ -130,7 +133,7 @@ Per-category scores:
 ## Quick Start
 
 Requirements: Python `>=3.11` and `OPENAI_API_KEY` set in your environment (or `.env`).
-For full parity with all 8 systems (including MemU), use Python `>=3.13`.
+For full parity with all 9 systems (including MemU and Memory-R1), use Python `>=3.13`.
 
 ```bash
 uv sync --all-extras
@@ -237,6 +240,7 @@ Any QA dataset works. Register a loader in `scripts/run_full_benchmark.py` and r
 - **Mem0**: At evaluation time, there was a reported timestamp-handling issue on the Mem0 platform ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) that may affect temporal reasoning. Our Mem0 temporal F1 (0.104) is materially lower than the paper's reported value (0.489), which may depress overall Mem0 performance in this benchmark.
 - **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy, a fundamentally different metric from token F1. Not directly comparable.
 - **Hindsight** builds both summaries and chunks, explaining the high token count (24.2M).
+- **Memory-R1** is the only system using a fine-tuned local model (Qwen-2.5-7B) rather than API-based LLMs. Results here use a model trained for 100 GRPO steps (undertrained vs. the paper’s schedule). Token usage: 3.4M total (1,986 questions; ~1,705 prompt / ~5.3 completion per question) — between Mem0 (3.0M) and Graphiti (5.1M) in efficiency.
 
 ## License
 
@@ -264,3 +268,4 @@ connection with the software or the use or other dealings in the software.
 - [Hindsight](https://arxiv.org/abs/2503.02972)
 - [OpenClaw Memory](https://docs.openclaw.ai/concepts/memory)
 - [MemU](https://github.com/NevaMind-AI/memU)
+- [Memory-R1](https://arxiv.org/abs/2508.19828) 

@@ -11,32 +11,6 @@ from agents_memory.evaluation import (
 )
 from agents_memory.locomo import CATEGORY_NAMES as _DEFAULT_CATEGORIES
 
-ANSWER_PROMPT_SHORT = (
-    "Answer the question concisely (1-5 words) using ONLY the "
-    "provided memories. If not found, say 'None'."
-)
-ANSWER_PROMPT_NATURAL = (
-    "Answer the question concisely but completely using ONLY the "
-    "provided memories. If not found, say 'None'."
-)
-
-
-def answer_prompt(judge_fn: str | None) -> str:
-    """Return the appropriate answer prompt based on judge type."""
-    return ANSWER_PROMPT_NATURAL if judge_fn == "longmemeval" else ANSWER_PROMPT_SHORT
-
-
-def print_ingest_stats(ingest: dict) -> None:
-    """Print ingestion stats from a PropMem ingest result."""
-    parts = [
-        f"chunks={ingest['num_chunks']}",
-        f"propositions={ingest['num_propositions']}",
-    ]
-    clusters = ingest.get("num_clusters", 0)
-    if clusters:
-        parts.append(f"clusters={clusters}")
-    print(f"    Ingested: {', '.join(parts)}")
-
 
 async def _qa_results_async(
     conv: dict,
