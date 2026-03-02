@@ -52,7 +52,7 @@ def main():
     rng.shuffle(sampled)
 
     # Normalize to LoCoMo-compatible format for --data-file
-    from agents_memory.benchmarks.longmemeval import _normalize, CATEGORY_NAMES, BENCHMARK_INFO
+    from agents_memory.benchmarks.longmemeval import _normalize
     normalized = [_normalize(item) for item in sampled]
 
     with open(args.output, "w") as f:

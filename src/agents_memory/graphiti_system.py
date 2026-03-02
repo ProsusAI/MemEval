@@ -108,7 +108,7 @@ class GraphitiSystem:
     _kuzu_driver: Any = field(default=None, init=False)
     _db_dir: str = field(default="", init=False)
 
-    async def _init_graphiti(self, group_id: str) -> None:
+    async def _init_graphiti(self) -> None:
         """Initialize Graphiti with a fresh Kuzu DB."""
         from graphiti_core import Graphiti
         from graphiti_core.driver.kuzu_driver import KuzuDriver
@@ -200,7 +200,7 @@ class GraphitiSystem:
         self.entity_names = [speaker_a, speaker_b]
 
         group_id = f"locomo-{sample_id}"
-        await self._init_graphiti(group_id)
+        await self._init_graphiti()
 
         # Find session keys
         session_keys = sorted(
