@@ -30,7 +30,7 @@ benchmark = [
 ]
 dev = [
     "pytest>=7.0.0",
-    "ruff>=0.1.0",
+    "ruff>=0.15.0",
     "mypy>=1.0.0",
 ]
 training = [
@@ -60,8 +60,3 @@ select = ["E", "F", "I", "N", "W"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-
-[dependency-groups]
-dev = [
-    "ruff>=0.15.0",
-]

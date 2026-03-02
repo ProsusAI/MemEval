@@ -22,6 +22,10 @@ lancedb_data/
 # OS
 .DS_Store
 
+# IDEs
+.idea/
+.vscode/
+
 # Claude Code
 .claude/
 
