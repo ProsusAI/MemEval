@@ -33,8 +33,6 @@ entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
 
 ## Results
 
-`Tokens` = total system LLM prompt + completion tokens across ingestion, retrieval, and answering; excludes embedding and judge calls.
-
 ### LoCoMo
 
 9 systems, 10 conversations, 1,986 QA pairs. All use gpt-4.1-mini and text-embedding-3-small except **Memory-R1**, which uses a fine-tuned Qwen-2.5-7B.
@@ -56,6 +54,8 @@ Overall metrics:
 | 9 | MemU | 0.299 | 0.399 | 6.7M |
 
 </div>
+
+<p align="center"><em>`Tokens` = total system LLM prompt + completion tokens across ingestion, retrieval, and answering; excludes embedding and judge calls.</em></p>
 
 Per-category F1:
 
