@@ -33,8 +33,7 @@ entity at query time. See [PROPMEM.md](PROPMEM.md) for the design.
 
 ## Results
 
-`Tokens` = total system LLM prompt + completion tokens across ingestion, retrieval,
-and answering; excludes embedding and judge calls.
+`Tokens` = total system LLM prompt + completion tokens across ingestion, retrieval, and answering; excludes embedding and judge calls.
 
 ### LoCoMo
 
@@ -99,8 +98,8 @@ Per-category scores:
 
 <div align="center">
 
-| System | SS-User | SS-Asst | SS-Pref | Multi-Session | Temporal | Knowledge Update |
-|:------:|:-------:|:-------:|:-------:|:-------------:|:--------:|:----------------:|
+| System | SS-U | SS-A | SS-P | MS | Temp | K-Update |
+|:------:|:----:|:----:|:----:|:--:|:----:|:--------:|
 | PropMem | **0.851** | **0.767** | 0.147 | **0.582** | 0.424 | **0.528** |
 | SimpleMem | 0.752 | 0.566 | 0.126 | 0.382 | **0.578** | 0.475 |
 | OpenClaw | 0.401 | 0.432 | 0.127 | 0.082 | 0.185 | 0.234 |
@@ -108,9 +107,12 @@ Per-category scores:
 
 </div>
 
+Legend: `SS-U` = Single-Session User, `SS-A` = Single-Session Assistant, `SS-P` = Single-Session Preference, `MS` = Multi-Session, `Temp` = Temporal, `K-Update` = Knowledge Update.
+
 <p align="center"><em>LLM: gpt-4.1. Embeddings: text-embedding-3-small. Judge: gpt-4o (LongMemEval native binary accuracy, matches the paper's evaluation protocol).</em></p>
 
 **Note on token consumption:** Token counts shift in opposite directions depending on architecture. Systems with LLM-heavy ingestion (for example, PropMem and SimpleMem) tend to be more expensive on LongMemEval because conversations are much longer. Systems with mostly query-time LLM usage (for example, OpenClaw and Full Context) can become cheaper when fewer questions are evaluated.
+Also, call count and token count can move in opposite directions: a system can make more LLM calls but use fewer total tokens if each call is shorter (for example, Mem0 vs. PropMem on LoCoMo).
 
 ## Systems
 
@@ -240,7 +242,8 @@ Any QA dataset works. Register a loader in `scripts/run_full_benchmark.py` and r
 - **Mem0**: At evaluation time, there was a reported timestamp-handling issue on the Mem0 platform ([mem0ai/mem0#3944](https://github.com/mem0ai/mem0/issues/3944)) that may affect temporal reasoning. Our Mem0 temporal F1 (0.104) is materially lower than the paper's reported value (0.489), which may depress overall Mem0 performance in this benchmark.
 - **MemU** claims "92% accuracy" on LoCoMo but uses LLM-judge binary accuracy, a fundamentally different metric from token F1. Not directly comparable.
 - **Hindsight** builds both summaries and chunks, explaining the high token count (24.2M).
-- **Memory-R1** is the only system using a fine-tuned local model (Qwen-2.5-7B) rather than API-based LLMs. Results here use a model trained for 100 GRPO steps (undertrained vs. the paper’s schedule). Token usage: 3.4M total (1,986 questions; ~1,705 prompt / ~5.3 completion per question) — between Mem0 (3.0M) and Graphiti (5.1M) in efficiency.
+- **Memory-R1** is the only system using a fine-tuned local model (Qwen-2.5-7B) rather than API-based LLMs.
+- Results here use a model trained for 100 GRPO steps (undertrained vs. the paper’s schedule). Token usage is 3.4M total (1,986 questions; ~1,705 prompt / ~5.3 completion per question), between Mem0 (3.0M) and Graphiti (5.1M) in efficiency.
 
 ## License
 
