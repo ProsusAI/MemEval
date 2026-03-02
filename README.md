@@ -176,20 +176,20 @@ You can use PropMem directly as an app memory layer (no benchmark runner require
 from agents_memory import PropMemMemory
 
 memory = PropMemMemory(
-    user_name="Asad",
+    user_name="John",
     assistant_name="Assistant",
     llm_model="gpt-4.1-mini",
 )
 
 memory.add_session(
     [
-        {"speaker": "Asad", "text": "I prefer quiet coffee shops for work."},
+        {"speaker": "John", "text": "I prefer quiet coffee shops for work."},
         {"speaker": "Assistant", "text": "Noted. You prefer quiet coffee shops."},
     ],
     session_date="2026-03-01 10:30:00",
 )
 
-answer = memory.ask("Where does Asad prefer to work?")
+answer = memory.ask("Where does John prefer to work?")
 print(answer)
 ```
 
