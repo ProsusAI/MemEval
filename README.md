@@ -249,7 +249,7 @@ connection with the software or the use or other dealings in the software.
 - [Mem0](https://arxiv.org/abs/2504.19413)
 - [SimpleMem](https://arxiv.org/abs/2601.02553)
 - [Graphiti](https://github.com/getzep/graphiti)
-- [Hindsight](https://arxiv.org/abs/2503.02972)
+- [Hindsight](https://hindsight.vectorize.io/)
 - [OpenClaw Memory](https://docs.openclaw.ai/concepts/memory)
 - [MemU](https://github.com/NevaMind-AI/memU)
 - [Memory-R1](https://arxiv.org/abs/2508.19828) 
