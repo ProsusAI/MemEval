@@ -112,14 +112,14 @@ We also introduce **PropMem**, which provides the strongest measured quality-to-
 
 | System | Architecture | Retrieval |
 |:------:|:------------:|:---------:|
-| **PropMem** | Entity-filtered propositions ([design](PROPMEM.md)) | Entity-scoped proposition search + CoT reasoning |
+| **PropMem** | Entity-filtered propositions | Entity-scoped proposition search + CoT reasoning |
 | **OpenClaw** | Chunk-and-search | Hybrid BM25 + vector search, top-K chunks to LLM |
 | **Full Context** | Brute force | Entire conversation in the prompt |
 | **Hindsight** | Structured memory networks | 4-network architecture (world, bank, opinion, observation) with retain-recall-reflect |
 | **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
 | **SimpleMem** | Structured compression | 3-stage pipeline: semantic compression, online synthesis, intent-aware retrieval |
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
-| **Memory-R1** | Two-agent RL ([arXiv:2508.19828](https://arxiv.org/abs/2508.19828)) | SFT+GRPO fine-tuned Qwen-2.5-7B (Memory Manager + Answer Agent) |
+| **Memory-R1** | Two-agent RL | SFT+GRPO fine-tuned Qwen-2.5-7B (Memory Manager + Answer Agent) |
 | **MemU** | Hierarchical memory | Memory-as-filesystem with auto-categorization and proactive context loading |
 
 </div>
