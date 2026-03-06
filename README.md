@@ -104,9 +104,9 @@ We also introduce **PropMem**, which provides the strongest measured quality-to-
 
 <p align="center"><em>Stratified sample of 102 questions (17 per category), conversations up to 500 turns. LLM: gpt-4.1. Embeddings: text-embedding-3-small. Judge: gpt-4o (LongMemEval native binary accuracy, matches the paper's evaluation protocol).</em></p>
 
-**Note on token consumption:** Token costs depend on architecture. Systems with LLM-heavy ingestion (PropMem, SimpleMem) are more expensive on longer conversations. Systems with mostly query-time usage (OpenClaw, Full Context) get cheaper when fewer questions are evaluated. Call count and token count can also move in opposite directions if individual calls are shorter.
-
 ## Systems
+
+MemEval ships with 9 memory systems spanning different architectural approaches:
 
 <div align="center">
 
