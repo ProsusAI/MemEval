@@ -22,8 +22,6 @@ We also introduce **PropMem**, which provides the strongest measured quality-to-
 
 ### LoCoMo
 
-Overall metrics:
-
 <div align="center">
 
 | Rank | System | F1 | Judge | Tokens |
@@ -42,7 +40,12 @@ Overall metrics:
 
 <p align="center"><em>`Tokens` = total system LLM prompt + completion tokens across ingestion, retrieval, and answering; excludes embedding and judge calls.</em></p>
 
-Per-category F1:
+<p align="center">
+  <img src="assets/benchmark_categories.png" width="90%"/>
+</p>
+
+<details>
+<summary>Per-category F1 (table)</summary>
 
 <div align="center">
 
@@ -60,11 +63,11 @@ Per-category F1:
 
 </div>
 
+</details>
+
 <p align="center"><em>10 conversations, 1,986 QA pairs. LLM: gpt-4.1-mini. Embeddings: text-embedding-3-small. Judge: gpt-5.2 (avg of relevance, completeness, accuracy).</em></p>
 
 ### LongMemEval
-
-Overall metrics:
 
 <div align="center">
 
@@ -77,7 +80,12 @@ Overall metrics:
 
 </div>
 
-Per-category scores:
+<p align="center">
+  <img src="assets/benchmark_longmemeval_categories.png" width="90%"/>
+</p>
+
+<details>
+<summary>Per-category scores (table)</summary>
 
 <div align="center">
 
@@ -90,7 +98,9 @@ Per-category scores:
 
 </div>
 
-Legend: `SS-U` = Single-Session User, `SS-A` = Single-Session Assistant, `SS-P` = Single-Session Preference, `MS` = Multi-Session, `Temp` = Temporal, `K-Update` = Knowledge Update.
+`SS-U` = Single-Session User, `SS-A` = Single-Session Assistant, `SS-P` = Single-Session Preference, `MS` = Multi-Session, `Temp` = Temporal, `K-Update` = Knowledge Update.
+
+</details>
 
 <p align="center"><em>Stratified sample of 102 questions (17 per category), conversations up to 500 turns. LLM: gpt-4.1. Embeddings: text-embedding-3-small. Judge: gpt-4o (LongMemEval native binary accuracy, matches the paper's evaluation protocol).</em></p>
 
@@ -105,12 +115,12 @@ Legend: `SS-U` = Single-Session User, `SS-A` = Single-Session Assistant, `SS-P` 
 | **PropMem** | Entity-filtered propositions ([design](PROPMEM.md)) | Entity-scoped proposition search + CoT reasoning |
 | **OpenClaw** | Chunk-and-search | Hybrid BM25 + vector search, top-K chunks to LLM |
 | **Full Context** | Brute force | Entire conversation in the prompt |
-| **Hindsight** | Chunk + hierarchical summary | Summaries for routing, chunks for answering |
+| **Hindsight** | Structured memory networks | 4-network architecture (world, bank, opinion, observation) with retain-recall-reflect |
 | **Graphiti** | Temporal knowledge graph | Graph search over entity nodes and relationship edges |
-| **SimpleMem** | Raw text + planning | Multi-round reflection (5+ LLM calls/question) |
+| **SimpleMem** | Structured compression | 3-stage pipeline: semantic compression, online synthesis, intent-aware retrieval |
 | **Mem0** | Fact extraction + search | Vector search over extracted facts |
 | **Memory-R1** | Two-agent RL ([arXiv:2508.19828](https://arxiv.org/abs/2508.19828)) | SFT+GRPO fine-tuned Qwen-2.5-7B (Memory Manager + Answer Agent) |
-| **MemU** | Summary extraction | Vector search with intention routing |
+| **MemU** | Hierarchical memory | Memory-as-filesystem with auto-categorization and proactive context loading |
 
 </div>
 

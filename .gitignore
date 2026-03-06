@@ -29,5 +29,8 @@ lancedb_data/
 # Claude Code
 .claude/
 
+# Drafts
+medium.md
+
 # Environment
 .env
