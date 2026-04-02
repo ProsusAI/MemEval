@@ -1,0 +1,5 @@
+System,Single-Session User,Single-Session Assistant,Single-Session Preference,Multi-Session,Temporal,Knowledge Update
+PropMem (Ours),0.851,0.767,0.147,0.582,0.424,0.528
+SimpleMem,0.752,0.566,0.126,0.382,0.578,0.475
+OpenClaw,0.401,0.432,0.127,0.082,0.185,0.234
+Full Context,0.265,0.415,0.177,0.062,0.212,0.202
