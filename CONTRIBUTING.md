@@ -66,3 +66,7 @@ Token F1 is the primary metric. The LLM judge is supplementary, useful when F1 i
 ```
 
 QA categories: 1=Factual, 2=Temporal, 3=Inferential, 4=Multi-hop, 5=Adversarial (empty answer = correct refusal).
+
+## Contributor License Agreement (CLA)
+
+By contributing to this project, you agree to assign copyright of your contribution to MIH AI B.V. You confirm that you have the right to make the contribution and that it does not knowingly infringe any third-party intellectual property rights. All contributions are licensed under the Apache License, Version 2.0.
