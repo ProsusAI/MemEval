@@ -1,4 +1,4 @@
-"""Mimir: persistent agent memory with structured entities and FTS5 hybrid search."""
+"""Perseus Vault: persistent agent memory with structured entities and FTS5 hybrid search."""
 
 import asyncio
 import json
@@ -15,16 +15,16 @@ from agents_memory.locomo import extract_dialogues
 
 
 SYSTEM_INFO = {
-    "name": "mimir",
+    "name": "perseus-vault",
     "architecture": "structured entity model + FTS5 hybrid search + proactive recall hooks",
-    "infrastructure": "Mimir server + SQLite + FTS5",
-    "url": "https://github.com/Perseus-Computing-LLC/mimir",
+    "infrastructure": "Perseus Vault server + SQLite + FTS5",
+    "url": "https://github.com/Perseus-Computing-LLC/perseus-vault",
     "fqdn": "perseus.observer",
 }
 
 
-class MimirClient:
-    """Thin HTTP wrapper around the Mimir MCP server (SSE transport)."""
+class PerseusVaultClient:
+    """Thin HTTP wrapper around the Perseus Vault MCP server (SSE transport)."""
 
     def __init__(self, base_url: str = "http://localhost:8766", session_id: str = "bench"):
         self._base_url = base_url
@@ -51,7 +51,7 @@ class MimirClient:
         r = self._call_mcp("initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "mimir-bench", "version": "1.0"},
+            "clientInfo": {"name": "perseus-vault-bench", "version": "1.0"},
         })
         self._call_mcp("notifications/initialized", {})
         return r.get("result", {}).get("serverInfo", {}).get("version", "?")
@@ -65,14 +65,14 @@ class MimirClient:
         }
         if tags:
             args["tags"] = tags
-        r = self._call_mcp("tools/call", {"name": "mimir_remember", "arguments": args})
+        r = self._call_mcp("tools/call", {"name": "perseus_vault_remember", "arguments": args})
         return r.get("result", {}).get("content", [{}])[0].get("text", "")
 
     def recall_all(self, category: str, limit: int = 100) -> str:
         """Retrieve ALL entities for a category directly from the DB, bypassing FTS5."""
         import sqlite3
         try:
-            db_path = "/tmp/mimir_sse.db"
+            db_path = "/tmp/perseus_vault_sse.db"
             conn = sqlite3.connect(db_path)
             cur = conn.execute(
                 "SELECT body_json FROM entities WHERE category = ? ORDER BY created_at_unix_ms LIMIT ?",
@@ -99,7 +99,7 @@ class MimirClient:
         args: dict[str, Any] = {"query": query, "limit": limit}
         if category:
             args["category"] = category
-        r = self._call_mcp("tools/call", {"name": "mimir_recall", "arguments": args})
+        r = self._call_mcp("tools/call", {"name": "perseus_vault_recall", "arguments": args})
         raw = r.get("result", {}).get("content", [{}])[0].get("text", "")
         try:
             data = json.loads(raw)
@@ -156,12 +156,12 @@ async def run(
         keywords = [w for w in words if len(w) > 2 and w not in STOPWORDS]
         return " ".join(keywords) if keywords else question
 
-    # Connect to the running Mimir server
+    # Connect to the running Perseus Vault server
     # Auto-pick a free session ID to avoid collisions
     session_id = f"bench_{uuid.uuid4().hex[:8]}"
-    mimir = MimirClient(base_url="http://localhost:8766", session_id=session_id)
-    ver = mimir.init()
-    print(f"    Mimir v{ver} connected (HTTP)")
+    vault = PerseusVaultClient(base_url="http://localhost:8766", session_id=session_id)
+    ver = vault.init()
+    print(f"    Perseus Vault v{ver} connected (HTTP)")
 
     # --- Ingest dialogue turns ---
     dialogues = extract_dialogues(conv)
@@ -186,7 +186,7 @@ async def run(
                 except ValueError:
                     pass
         try:
-            mimir.remember(
+            vault.remember(
                 category=f"conv_{sample_id}",
                 key=key,
                 body_json=body,
@@ -198,7 +198,7 @@ async def run(
         except Exception as e:
             print(f"    Remember error turn {i}: {e}")
 
-    print(f"    Ingested: {len(keys_used)} dialogue turns into Mimir")
+    print(f"    Ingested: {len(keys_used)} dialogue turns into Perseus Vault")
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=30)
 
     async def answer_fn(question: str) -> str:
@@ -209,7 +209,7 @@ async def run(
             
             # Search with full keyword string
             if query:
-                r = mimir.recall(query=query, category=f"conv_{sample_id}", limit=20)
+                r = vault.recall(query=query, category=f"conv_{sample_id}", limit=20)
                 for line in r.split("\n"):
                     if line.strip():
                         recalled_set.add(line.strip())
@@ -217,14 +217,14 @@ async def run(
             # Also search each significant keyword individually
             for kw in query.split()[:5]:
                 if len(kw) >= 3:
-                    r = mimir.recall(query=kw, category=f"conv_{sample_id}", limit=5)
+                    r = vault.recall(query=kw, category=f"conv_{sample_id}", limit=5)
                     for line in r.split("\n"):
                         if line.strip():
                             recalled_set.add(line.strip())
             
             # Fall back to full context if FTS5 found nothing useful
             if len(recalled_set) < 3:
-                recalled = mimir.recall_all(category=f"conv_{sample_id}")
+                recalled = vault.recall_all(category=f"conv_{sample_id}")
             else:
                 recalled = "\n".join(recalled_set)
         except Exception as e:
